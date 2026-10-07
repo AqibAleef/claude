@@ -150,100 +150,106 @@ for k, sec in enumerate(SECTIONS):
     y += body * 0.5 + 30     # next block overlaps this one's lower part: the corner joins them
 
 # ------------------------------------------------------------------ camera
-B = [s['start'] for s in sec_info] + [DUR + 1]
-hits = sorted(c['at'] for c in placed if c['kind'] in ('text', 'clip'))
+# One organised move per bar, the same every time: settle on the new face, slow push-in while the words land, then a
+# smooth glide round the corner onto the next face while sinking to the next block. Every channel is a monotone
+# cubic (PCHIP) through a few anchor points per bar, so speed never jumps and nothing overshoots. No beat kicks or
+# wobble: the words do the punching, the camera just flows.
+def pchip(pts):
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]; n = len(xs)
+    h = [xs[i + 1] - xs[i] for i in range(n - 1)]; dl = [(ys[i + 1] - ys[i]) / h[i] for i in range(n - 1)]
+    m = [0.0] * n
+    m[0], m[-1] = dl[0], dl[-1]
+    for i in range(1, n - 1):
+        if dl[i - 1] * dl[i] <= 0: m[i] = 0.0
+        else:
+            w1, w2 = 2 * h[i] + h[i - 1], h[i] + 2 * h[i - 1]
+            m[i] = (w1 + w2) / (w1 / dl[i - 1] + w2 / dl[i])
+    def f(t):
+        if t <= xs[0]: return ys[0]
+        if t >= xs[-1]: return ys[-1]
+        i = 0
+        while xs[i + 1] < t: i += 1
+        u = (t - xs[i]) / h[i]
+        h00, h10, h01, h11 = 2*u**3 - 3*u**2 + 1, u**3 - 2*u**2 + u, -2*u**3 + 3*u**2, u**3 - u**2
+        return h00 * ys[i] + h10 * h[i] * m[i] + h01 * ys[i + 1] + h11 * h[i] * m[i + 1]
+    return f
 
 
-def follow_y(t):
-    """camera height: glides towards each new card as it lands (keeps the block it belongs to in view)"""
-    v = sec_info[0]['top'] + 150
-    for c in FOLLOW:
-        if t < c['at']: break
-        tgt = 0.5 * (c['wy'] + c['h'] / 2) + 0.5 * (sec_info[c['sec']]['top'] + sec_info[c['sec']]['body'] / 2) - 40
-        v += (tgt - v) * bez((t - c['at']) / 0.5)
-    return v
-
-
-FOLLOW = sorted([c for c in placed if c['kind'] != 'bar'], key=lambda c: c['at'])
-
-
-def pan_at(t):
-    pts = [(0.0, 75.0), (0.9, 34.0)]
-    for k2 in range(1, len(sec_info)):
-        b = sec_info[k2]['start']
-        pts.append((b - 0.32, -90.0 * (k2 - 1) - 28))
-        pts.append((b + 0.15, -90.0 * k2 + 34))
-    pts.append((16.9, -90.0 * (len(sec_info) - 1) - 5))
-    pts.append((DUR, -90.0 * (len(sec_info) - 1) - 70))
-    for (ta, pa), (tb, pb) in zip(pts, pts[1:]):
-        if ta <= t <= tb:
-            u = (t - ta) / max(tb - ta, 1e-6)
-            return pa + (pb - pa) * (whip(u) if tb - ta < 0.6 else 0.7 * u + 0.3 * bez(u))
-    return pts[-1][1]
-
-
-def sec_at(t):
-    k = 0
-    while k + 1 < len(sec_info) and t >= sec_info[k + 1]['start'] - 0.3: k += 1
-    return k
+NB = len(sec_info)
+TURN = 0.62                     # corner glide length (s), centred just before the bar line
+pan_pts, r_pts, y_pts, tilt_pts, roll_pts = [], [], [], [], []
+for k, s_ in enumerate(sec_info):
+    b0 = s_['start']; b1 = sec_info[k + 1]['start'] if k + 1 < NB else DUR
+    top, body = s_['top'], s_['body']
+    land = b0 + TURN * 0.45 if k else 0.95               # turn finished, face settled
+    leave = b1 - TURN * 0.55 if k + 1 < NB else 16.95    # next turn starts
+    face = -90.0 * k
+    pan_pts += [(land, face + 18), (leave, face - 18)]
+    r_pts += [(land, 1480), (leave, 1360)]
+    y_pts += [(land, top + body * 0.12), (leave, top + body * 0.40)]
+    tilt_pts += [(land, -5), (leave, -7)]
+    roll_pts += [(land, 0), (leave, 0)]
+    if k + 1 < NB:              # mid-corner: wide enough to see both faces, leaning into the turn
+        mid = b1 - TURN * 0.05
+        pan_pts.append((mid, face - 45))
+        r_pts.append((mid, 1640))
+        tilt_pts.append((mid, -11))
+        roll_pts.append((mid, -5.5))
+# intro: glide down from high and wide onto the first face; outro: rise and pull back to show the tower
+pan_pts = [(0.0, 70)] + pan_pts + [(DUR, -90.0 * (NB - 1) - 55)]
+r_pts = [(0.0, 2900)] + r_pts + [(DUR, 3900)]
+y_pts = [(0.0, sec_info[0]['top'] - 650)] + y_pts + [(DUR, sec_info[-1]['top'] - 500)]
+tilt_pts = [(0.0, -24)] + tilt_pts + [(DUR, -18)]
+roll_pts = [(0.0, -8)] + roll_pts + [(DUR, 4)]
+PAN, RAD, CY_, TILT, ROLL = map(pchip, (pan_pts, r_pts, y_pts, tilt_pts, roll_pts))
 
 
 def cam(t):
-    # pan: never stops turning. Slow drift round each face, whip across the corner on the bar line
-    pan = pan_at(t)
-    k = sec_at(t)
-    s0 = sec_info[k]['start']; s1 = B[k + 1]
-    ph = min(1, max(0, (t - s0) / max(s1 - s0, 0.1)))
-    # distance: wide during the whip (shows the corner), slow push-in through the bar, kick on every hit
-    R = 1370 - 150 * bez(ph)
-    for k2 in range(1, len(sec_info)):
-        u = (t - (sec_info[k2]['start'] - 0.34)) / 0.6
-        if 0 <= u <= 1: R += 420 * math.sin(math.pi * u) ** 2
-    for h in hits:
-        u = t - h
-        if 0 <= u < 0.35: R -= 70 * math.exp(-u * 12) * math.sin(min(1, u / 0.05) * math.pi / 2)
-    # intro: fall in from high and far
-    if t < 0.9:
-        e = bez(t / 0.9); R += (1 - e) * 1600
-    # finale: pull way back and look up the tower
-    fin = bez((t - 16.9) / 1.6)
-    R += fin * 2200
-    yc = follow_y(t) - fin * 900
-    tilt = -7 + 5 * math.sin(t * 1.9) - 10 * fin
-    roll = 0.0
-    for k2 in range(1, len(sec_info)):
-        u = (t - (sec_info[k2]['start'] - 0.34)) / 0.7
-        if 0 <= u <= 1: roll += (7 if k2 % 2 else -7) * math.sin(math.pi * u) * (1 - u * 0.4)
-    roll += 2.2 * math.sin(t * 2.7)
-    if t < 0.9: roll += (1 - bez(t / 0.9)) * -14; tilt += (1 - bez(t / 0.9)) * -22; yc -= (1 - bez(t / 0.9)) * 700
+    pan = PAN(t); R = RAD(t)
     pr = math.radians(pan)
     ex, ez = AX - R * math.sin(pr), AZ - R * math.cos(pr)
-    return dict(x=ex, y=yc, z=ez + F, pan=pan, tilt=tilt, roll=roll, lens=1.0)
+    return dict(x=ex, y=CY_(t), z=ez + F, pan=pan, tilt=TILT(t), roll=ROLL(t), lens=1.0)
 
 
-FPS_KEYS = 24
+FPS_KEYS = 12
 keys = []
-for i in range(int(DUR * FPS_KEYS) + 1):
-    t = i / FPS_KEYS
+for i in range(int(round(DUR * FPS_KEYS)) + 1):
+    t = min(DUR, i / FPS_KEYS)
     c = cam(t)
     keys.append(dict(t=round(t, 3), x=round(c['x'], 1), y=round(c['y'], 1), z=round(c['z'], 1), pan=round(c['pan'], 2),
                      tilt=round(c['tilt'], 2), roll=round(c['roll'], 2), lens=c['lens'], ease='linear'))
 
 
+def project(c, X, Y, Z):        # same maths as Kinekit's projectPoint
+    P, T_ = math.radians(c['pan']), math.radians(c['tilt'])
+    vx, vy, vz = X - c['x'], Y - c['y'], Z - c['z'] + F
+    x1, z1 = vx * math.cos(P) - vz * math.sin(P), vx * math.sin(P) + vz * math.cos(P)
+    y2, D = vy * math.cos(T_) + z1 * math.sin(T_), -vy * math.sin(T_) + z1 * math.cos(T_)
+    k = F / max(D, 1e-3); a = math.radians(c['roll']); dx, dy = x1 * k, y2 * k
+    return 360 + dx * math.cos(a) - dy * math.sin(a), 640 + dx * math.sin(a) + dy * math.cos(a), D
+
+
 def facing_spans(c):
-    """intervals where the card faces the camera: it sticks, hides while the tower turns its back, comes round again"""
-    nr = math.radians(c['ry'])
-    nx, nz = math.sin(nr), -math.cos(nr)
+    """intervals where the card faces the camera AND is in (or next to) the frame: it sticks while you can see it,
+    is cut while the tower turns its back or it is far off screen, and comes back when the camera comes round"""
+    nr = math.radians(c['ry']); nx, nz = math.sin(nr), -math.cos(nr)
+    rx_, rz_ = math.cos(nr), math.sin(nr)        # card's own right vector in world (x, z)
     spans, on, t, st = [], False, c['at'], None
     while t <= DUR + 1e-9:
         k = cam(t)
         dx, dz = k['x'] - c['wx'], k['z'] - F - c['wz']
-        vis = (dx * nx + dz * nz) > 0.06 * math.hypot(dx, dz)
+        vis = (dx * nx + dz * nz) > 0.2 * math.hypot(dx, dz)
+        if vis:
+            pts = [project(k, c['wx'] + sx * c['w'] / 2 * rx_, c['wy'] + sy * c['h'] / 2, c['wz'] + sx * c['w'] / 2 * rz_) for sx in (-1, 1) for sy in (-1, 1)]
+            if min(p[2] for p in pts) < 200: vis = False
+            else:
+                xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+                vis = max(xs) > -150 and min(xs) < 870 and max(ys) > -150 and min(ys) < 1430
         if vis and not on: on, st = True, t
         if not vis and on: on = False; spans.append((round(st, 3), round(t, 3)))
         t += 1 / 60
     if on: spans.append((round(st, 3), DUR))
-    return [(a, b) for a, b in spans if b - a > 0.12]
+    return [(a, b) for a, b in spans if b - a > 0.15]
 
 
 # ------------------------------------------------------------------ layers
@@ -269,7 +275,7 @@ for c0 in sorted(placed, key=lambda c: c['at']):
         t = copy.deepcopy(orig_text.get(c['text'], tmpl_text))
         t.update(text=c['text'], start=round(c['at'], 3), end=end, x=common['x'], y=common['y'], size=round(c['size'], 3), color=c['color'],
                  split='whole', align='center', tracking=0.01, line_height=0.92,
-                 **{'in': {'preset': 'punch_in', 'dur': 0.16, 'stagger': 0, 'order': 'forward', 'amount': 1} if first else 'none', 'out': 'none'})
+                 **{'in': {'preset': 'punch_in', 'dur': 0.3, 'stagger': 0, 'order': 'forward', 'amount': 0.7} if first else 'none', 'out': 'none'})
         st = t['studio']; st.update(id=new_id('tx'), depth=common['depth'], cam=True, rot=0, tk=[], rx=0, ry=common['ry'])
         st['slot'] = {'on': True, 'label': f"Bar {c['sec'] + 1}: {c['text']}"}
         texts.append(t); order.append(st['id'])
@@ -280,7 +286,7 @@ for c0 in sorted(placed, key=lambda c: c['at']):
     elif c['kind'] == 'photo':
         it = copy.deepcopy(base_photo); it.update(id=new_id('ph'), name=f"Photo {c['src'][3:]}", start=round(c['at'], 3), end=end, w=round(c['w'], 1), yaw=0, **common)
         it['photo'].update(src='up:' + c['src'], aspect=c['aspect'])
-        it['in'] = {'preset': 'pop', 'dur': 0.18, 'stagger': 0, 'order': 'forward', 'amount': 1} if first else None
+        it['in'] = {'preset': 'punch_in', 'dur': 0.32, 'stagger': 0, 'order': 'forward', 'amount': 0.7} if first else None
         items.append(it); order.append(it['id'])
     elif c['kind'] == 'clip' and not first:   # later passes round the tower: the clip's last frame
         s_, a_ = LATE_STILL[c['clip']]
@@ -298,7 +304,7 @@ for c0 in sorted(placed, key=lambda c: c['at']):
             it = copy.deepcopy(base_video)
             it.update(id=new_id('vd'), name=c['clip'], start=round(c['at'], 3), end=vend, w=round(c['w'], 1), **common)
             it['video'].update(src='vid:cb_' + c['clip'], trimIn=c['trim'])
-        it['in'] = {'preset': 'pop', 'dur': 0.18, 'stagger': 0, 'order': 'forward', 'amount': 1}
+        it['in'] = {'preset': 'punch_in', 'dur': 0.32, 'stagger': 0, 'order': 'forward', 'amount': 0.7}
         items.append(it); order.append(it['id'])
         if vend < end - 0.05:   # clip ran out: its last frame sticks as a photo
             s, a = LATE_STILL[c['clip']]
