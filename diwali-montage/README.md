@@ -55,6 +55,46 @@ A warm grade, film grain and a vignette sit over everything.
 - **Videos:** export to KineMaster first, then use **Replace** on each holder layer there. Alternatively, import the clip in the Studio's Media pane, put it on the same time range, and delete the holder.
 - **Speed ramps:** for a real speed ramp, set the clip speed in KineMaster. The push keyframes already ramp the motion.
 
+## Real-footage version
+
+`Diwali_Montage_9x16_REAL.recipe.json` is the same edit, cut from your video, your 5 photos and elements from your zip. **Its clips are packed inside the recipe file.** Open it in the patched `Kinekit_Studio.html` and they load on their own. When you export, KineMaster gets real video layers with the right trims.
+
+- **Browser:** use Chrome or Edge. Their MP4 (H.264) playback is what the Studio needs; some other browsers can't play these clips.
+- **Re-saving:** File › Save recipe keeps the clips inside the file.
+- **Preview:** `preview/Diwali_Montage_real_preview.mp4`, with the temp music.
+
+| Shot | Footage |
+|---|---|
+| 01 ignition | photo: diya in the dark (flame bloom on the real flame) |
+| 02, 13 | clip `diya_macro` (diya flame macro) |
+| 03 | photo: marigold rangoli with diyas |
+| 04 | photo: diya on colour rangoli |
+| 05, 09 (LOVE), 15 | clip `thali` (girl with puja thali) |
+| 06, 16 | clip `diya_ring` (top-down ring of diyas) |
+| 07 slow shot | photo: hands lighting diyas |
+| 08 (LIGHT), 14 | clip `women` (two women in sarees with candles) |
+| 10 (CELEBRATE), 18 | clip `sparkler_woman` |
+| 11 behind DIWALI | clip `sky_wide` (fireworks over the horizon) |
+| 12 | clip `fw_purple` |
+| 17 | clip `sky_city` |
+| 19 | clip `anaar` (fountain) |
+| 20 hero | photo: field of diyas (soft scrim behind HAPPY DIWALI) |
+
+**Elements from the zip:**
+- **Diya:** stray specks removed. It's the diya left glowing at the end.
+- **Rangoli:** soft-masked into a medallion that turns under DIWALI.
+- **Lantern:** baked backdrop keyed out, then mirrored for the two hanging lanterns in the hero shot.
+- **Not used:** `fireworks.png` and `golden_particle_trail.png` have their beige background baked in, and `happy_diwali_title.png` is cut off ("HAPPY DIWA"). The drawn light elements cover these instead.
+
+`media/` holds the prepared clips (720×1280 MP4), the 9:16 photo crops and the cleaned elements. To re-cut from the source files:
+
+```bash
+python3 tools/media_prep.py 1008.mp4 PHOTOS_DIR ELEMENTS_DIR media      # photos named 1.jpg..5.jpg as sent
+python3 tools/build_diwali_real.py assets media tools/template.recipe.json tools/dw_widths.json Diwali_Montage_9x16_REAL.recipe.json
+```
+
+To change which part of the source video a clip uses, edit `CLIPS` in `media_prep.py`. The slot-to-footage map is `MEDIA_FOR` in `build_diwali_real.py`.
+
 ## Sound
 
 The music is the **temp track** from the India edit (`Beatsync_edit_from_1m39s.m4a`), already loaded in your Studio. Its drop matches the brief at 0:03. To use a different festive track, swap it, then re-time by changing `BPM` / `OFF` at the top of `tools/build_diwali.py` and rebuilding.

@@ -5293,7 +5293,7 @@ const VP = ['viewport'], VPO = ['viewport', 'outliner'], VPOP = ['viewport', 'ou
 const ACT = {
   newProject: { label: 'New project', keys: [['ctrl+alt+n', '*']], run: newProject },
   open: { label: 'Open .kine / recipe…', keys: [['ctrl+o', '*']], run: () => $('#fileIn').click() },
-  saveRecipe: { label: 'Save recipe (.json)', keys: [['ctrl+s', '*']], run: async () => { try { const res = await offer(safeName(state.title) + '.json', new TextEncoder().encode(JSON.stringify(toRecipe(), null, 2))); if (res === 'saved') toast('Recipe saved. The project also autosaves in this browser.'); } catch (err) { toast('Export failed: ' + err.message, true); } } },
+  saveRecipe: { label: 'Save recipe (.json)', keys: [['ctrl+s', '*']], run: async () => { try { const rec = toRecipe(), sv = await recipeVideos(); if (sv) rec.studio_videos = sv; const res = await offer(safeName(state.title) + '.json', new TextEncoder().encode(JSON.stringify(rec, null, 2))); if (res === 'saved') toast('Recipe saved. The project also autosaves in this browser.'); } catch (err) { toast('Export failed: ' + err.message, true); } } },
   export: { label: 'Export .kine for KineMaster', keys: [['ctrl+e', '*']], run: () => { if (!state.blocks.length && !base) return toast('Add at least one layer first.', true); exportKine(buildKine(), state.title); } },
   restore: { label: 'Restore last session', enabled: () => !!localStorage.getItem(STORE_KEY), run: () => { const s = restore(); if (!s) return toast('No saved session.'); if (base) closeBase(); state = s; S.ids.clear(); S.cam = false; S.keys.clear(); setActive(null); bakeAll(); state.blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); loadMedia(); refreshAll(); setTime(0); toast('Restored your last session.'); } },
   compatTest: { label: 'KineMaster compatibility test', run: () => exportKine(buildCompatTest(), 'kinekit compatibility test', 'Open it in KineMaster: 1 text that moves, rotates and scales, 1 picture with a fade in and out.') },
@@ -7162,6 +7162,21 @@ function hasAlpha(c) {
   try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) return true; } catch (e) {}
   return false;
 }
+/* clips carried inside a recipe: {id: {name, ext, data: dataURL}} -> this browser's video store, keeping their ids so
+   the recipe's video layers find them (no relinking by hand) */
+let recipeLoad = Promise.resolve();
+async function loadRecipeVideos(m) {
+  if (!m) return; let n = 0;
+  for (const [id, v] of Object.entries(m)) { try { const bl = await (await fetch(v.data)).blob(); await registerVideo(id, bl, v.name || id, v.ext || 'mp4'); n++; } catch (e) { console.warn('clip', id, e); } }
+  if (n) { bakeAll(); renderProps(); updateStats(); drawAll(); saveSoon(); toast(`Loaded ${n} clip${n === 1 ? '' : 's'} from the recipe.`); }
+}
+/* the clips a project uses, packed for a recipe file (so it opens complete in any browser) */
+async function recipeVideos() {
+  const ids = new Set(state.blocks.filter(b => b.type === 'video').map(b => String(b.video.src).slice(4))), out = {};
+  for (const id of ids) { const bl = await idb.get('vid:' + id); if (!bl) continue; const m = binEntry(id) || {};
+    out[id] = { name: m.name || id, ext: m.ext || 'mp4', data: await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(bl); }) }; }
+  return Object.keys(out).length ? out : null;
+}
 /* photos carried inside a recipe: {id: dataURL} -> this browser's photo store */
 async function loadRecipeMedia(m) {
   if (!m) return; let n = 0;
@@ -7197,7 +7212,7 @@ function fromRecipe(r) {
     music: { asset: (r.audio && r.audio[0] && r.audio[0].asset) || '', volume: (r.audio && r.audio[0] && r.audio[0].volume) || 50 },
     rgb: { on: !!(r.effects && r.effects.find(e => e.asset === '3dGlasses')), amount: (r.effects && r.effects[0] && r.effects[0].params && r.effects[0].params.distance) || 0.6 }, blocks });
   projectExtrasIn(r.studio_project);
-  bakeAll(); blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); S.ids.clear(); S.cam = false; S.keys.clear(); S.kind = 'layers'; if (blocks[0]) { S.ids.add(blocks[0].id); setActive(blocks[0].id); } bindProject(); renderBlocks(); renderInspector(); renderCamera(); updateStats(); setTime(0); saveSoon(); loadRecipeMedia(r.studio_media).then(() => loadMedia());
+  bakeAll(); blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); S.ids.clear(); S.cam = false; S.keys.clear(); S.kind = 'layers'; if (blocks[0]) { S.ids.add(blocks[0].id); setActive(blocks[0].id); } bindProject(); renderBlocks(); renderInspector(); renderCamera(); updateStats(); setTime(0); saveSoon(); recipeLoad = loadRecipeMedia(r.studio_media).then(() => loadMedia()).then(() => loadRecipeVideos(r.studio_videos));
 }
 function resetExample() { loadScene('kinetic'); }
 // ------------------------------------------------------------------ files in
@@ -7390,7 +7405,7 @@ async function boot() {
   if (hasAutosave) toast('New blank scene. Your last session is still saved: File › Restore last session.', false, 4500);
   let v = 'cam'; try { v = localStorage.getItem('kinekit-view') || 'cam'; } catch (e) {}
   if (v !== 'cam') setView(v);
-  window.__studio = { buildPinTest, buildCompatTest, buildFadeTest, setView, view: () => view3d, state: () => state, S, baked, assets, buildKine, loadScene, toRecipe, fromRecipe, setTime, K, run, ACT, selectLayers, selectCamera, selectKeys, startModal, confirmModal, cancelModal, applyModal, modal: () => modal, xformAt, setXf, insertKey, bakeAll, drawAll, pause, T: () => T, tlGeo: () => tlGeo, comboOf, findAction, renderFrameAt, fitChars, slotsOf, slotIssues, exportSlotSheet, buildEaseTest, kfTotals, optimizeKfs, togglePanel, importVideo, registerVideo, idb, loadVideoBlob, addVideoLayer, videosSettled, vids, addFx, buildEaseTest, fxExportKeys, setBgMode, bgMode, mediaInventory, mediaUse, binAdd, speedAt, warp, warpOn, outLength, addSpeedKey, warpResult, screenQuad, worldQuad, xformAt, restXf, reframeTo, reframeState, openReframe, importKineLayers, askKineOpen, openKine, importMusic, detectBeat, applyBeat, musicInfo: () => musicInfo, setMusicBuffer, animFor: K.ANIMATORS, beatCascade, beatPulseSel, ui: () => ui, tlUi: () => tlUi };
+  window.__studio = { recipeLoad: () => recipeLoad, buildPinTest, buildCompatTest, buildFadeTest, setView, view: () => view3d, state: () => state, S, baked, assets, buildKine, loadScene, toRecipe, fromRecipe, setTime, K, run, ACT, selectLayers, selectCamera, selectKeys, startModal, confirmModal, cancelModal, applyModal, modal: () => modal, xformAt, setXf, insertKey, bakeAll, drawAll, pause, T: () => T, tlGeo: () => tlGeo, comboOf, findAction, renderFrameAt, fitChars, slotsOf, slotIssues, exportSlotSheet, buildEaseTest, kfTotals, optimizeKfs, togglePanel, importVideo, registerVideo, idb, loadVideoBlob, addVideoLayer, videosSettled, vids, addFx, buildEaseTest, fxExportKeys, setBgMode, bgMode, mediaInventory, mediaUse, binAdd, speedAt, warp, warpOn, outLength, addSpeedKey, warpResult, screenQuad, worldQuad, xformAt, restXf, reframeTo, reframeState, openReframe, importKineLayers, askKineOpen, openKine, importMusic, detectBeat, applyBeat, musicInfo: () => musicInfo, setMusicBuffer, animFor: K.ANIMATORS, beatCascade, beatPulseSel, ui: () => ui, tlUi: () => tlUi };
 }
 boot();
 })();
