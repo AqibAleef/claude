@@ -2874,7 +2874,17 @@ function camKeySelected(i) { const k = state.camera.keys[i]; return !!k && S.key
    adds or updates a key there (auto-key, like After Effects with the stopwatch on). */
 const XF_CH = ['x', 'y', 'depth', 'rot', 's', 'rx', 'ry'];   // rx / ry: 3D tilt (corner pin perspective)
 const restXf = b => ({ x: +b.x || 0, y: +b.y || 0, depth: +b.depth || 0, rot: +b.rot || 0, s: 1, rx: +b.rx || 0, ry: +b.ry || 0 });
+/* Offset ("re-transform"): b.xo = {x, y, depth, rot, s, rx, ry} is added on top of the whole animation, keys or not.
+   It moves / turns / scales every keyframe at once without touching them (Offset mode: Shift+O). */
+const XO0 = () => ({ x: 0, y: 0, depth: 0, rot: 0, s: 1, rx: 0, ry: 0 });
+const hasXo = b => !!(b.xo && (b.xo.x || b.xo.y || b.xo.depth || b.xo.rot || (b.xo.s ?? 1) !== 1 || b.xo.rx || b.xo.ry));
+let xoMode = false;
 function xformAt(b, t) {
+  const A = xformRaw(b, t), o = b.xo; if (!o) return A;
+  return { x: A.x + (+o.x || 0), y: A.y + (+o.y || 0), depth: A.depth + (+o.depth || 0), rot: A.rot + (+o.rot || 0), s: A.s * (o.s ?? 1), rx: (A.rx || 0) + (+o.rx || 0), ry: (A.ry || 0) + (+o.ry || 0) };
+}
+/* the keyed (or rest) transform alone, without the offset */
+function xformRaw(b, t) {
   const ks = b.tk; if (!ks || !ks.length) return restXf(b);
   const val = k => ({ x: k.x, y: k.y, depth: k.depth, rot: k.rot, s: k.s, rx: k.rx || 0, ry: k.ry || 0 });
   if (t <= ks[0].t) return val(ks[0]);
@@ -2884,9 +2894,39 @@ function xformAt(b, t) {
   const o = {}; for (const ch of XF_CH) { const va = +a[ch] || 0, vc = +c[ch] || 0; o[ch] = va + (vc - va) * e; } if (!a.s && !c.s) o.s = 1; return o;
 }
 const keyAt = (arr, t, tol = 0.5 / 30) => arr.findIndex(k => Math.abs(k.t - t) < tol);
+/* Origin (pivot): b.org = {x, y}, stage px from the layer's anchor. Rotation and scale turn around it; at no rotation
+   and 100 % scale the layer sits exactly where it did, so moving the origin never moves a still layer. */
+const orgOf = b => [+(b.org && b.org.x) || 0, +(b.org && b.org.y) || 0];
+const hasOrg = b => { const [ox, oy] = orgOf(b); return !!(ox || oy); };
 function applyXf(p, b, A) {
-  const a = A.rot * D2R, vx = (p.x - b.x) * A.s, vy = (p.y - b.y) * A.s, c = Math.cos(a), s = Math.sin(a);
-  return Object.assign({}, p, { x: A.x + vx * c - vy * s, y: A.y + vx * s + vy * c, rot: p.rot + A.rot, sx: p.sx * A.s, sy: p.sy * A.s });
+  const [ox, oy] = orgOf(b), a = A.rot * D2R, vx = (p.x - b.x - ox) * A.s, vy = (p.y - b.y - oy) * A.s, c = Math.cos(a), s = Math.sin(a);
+  return Object.assign({}, p, { x: A.x + ox + vx * c - vy * s, y: A.y + oy + vx * s + vy * c, rot: p.rot + A.rot, sx: p.sx * A.s, sy: p.sy * A.s });
+}
+/* move the origin; keepInPlace shifts the layer's offset (never its keys) so it doesn't jump at the playhead */
+function setOrigin(b, nx, ny, keepInPlace = true, t = T) {
+  const [ox, oy] = orgOf(b), dx = nx - ox, dy = ny - oy;
+  if (keepInPlace && (dx || dy)) {
+    const A = xformAt(b, t), a = A.rot * D2R, c = Math.cos(a) * A.s, s = Math.sin(a) * A.s;
+    const ex = dx - (dx * c - dy * s), ey = dy - (dx * s + dy * c);          // how far the layer would jump
+    if (Math.abs(ex) > 1e-6 || Math.abs(ey) > 1e-6) { b.xo = Object.assign(XO0(), b.xo || {}); b.xo.x = +((+b.xo.x || 0) - ex).toFixed(2); b.xo.y = +((+b.xo.y || 0) - ey).toFixed(2); }
+  }
+  b.org = { x: +nx.toFixed(1), y: +ny.toFixed(1) };
+  if (!b.org.x && !b.org.y) delete b.org;
+}
+/* the layer's own size at 100 % (for the origin presets) */
+function blockSize(b) {
+  if (b.type === 'text') { const u = K.layout(b.text || ' ', 0, 0, +b.size || 1, 'whole', +b.tracking || 0, +b.lineHeight || 1)[0]; return u ? [u.w, u.h] : [100, 40]; }
+  if (b.type === 'photo' || b.type === 'video' || b.type === 'decor') { const g = itemPicture(b); return [g.w, g.h]; }
+  return [ST.W, ST.H];
+}
+/* bake the offset into every key (or the rest values) and clear it */
+function bakeOffset(b) {
+  const o = b.xo; if (!o) return; const sc = o.s ?? 1;
+  const one = k => { k.x = +((+k.x || 0) + (+o.x || 0)).toFixed(1); k.y = +((+k.y || 0) + (+o.y || 0)).toFixed(1); k.depth = +((+k.depth || 0) + (+o.depth || 0)).toFixed(1);
+    k.rot = +((+k.rot || 0) + (+o.rot || 0)).toFixed(2); k.rx = +((+k.rx || 0) + (+o.rx || 0)).toFixed(2); k.ry = +((+k.ry || 0) + (+o.ry || 0)).toFixed(2); };
+  if (hasTk(b)) b.tk.forEach(k => { one(k); k.s = +((k.s ?? 1) * sc).toFixed(4); });
+  else { one(b); if (sc !== 1) scaleBase(b, sc); }
+  delete b.xo;
 }
 /* base size of a layer, used by "scale" when it isn't keyed */
 function scaleBase(b, f) {
@@ -2898,9 +2938,20 @@ function scaleBase(b, f) {
 }
 /* set transform channels at the playhead. patch: {x, y, depth, rot, s(multiplier)} */
 function setXf(b, patch, t = T) {
+  if (xoMode && b.type !== 'bg') {            // Offset mode: the change goes to the offset, no key is added
+    const R = xformRaw(b, t), o = b.xo = Object.assign(XO0(), b.xo || {});
+    for (const ch in patch) {
+      if (ch === 's') o.s = +clamp(patch.s / (R.s || 1), 0.01, 100).toFixed(4);
+      else if (XF_CH.includes(ch)) o[ch] = +((+patch[ch]) - (+R[ch] || 0)).toFixed(ch === 'rot' || ch === 'rx' || ch === 'ry' ? 2 : 1);
+    }
+    if (!hasXo(b)) delete b.xo;
+    return;
+  }
+  // a patch holds final values (offset included): take the offset off before writing keys / rest values
+  if (b.xo) { const o = b.xo; patch = Object.assign({}, patch); for (const ch in patch) { if (ch === 's') patch.s = patch.s / (o.s ?? 1); else if (XF_CH.includes(ch)) patch[ch] = patch[ch] - (+o[ch] || 0); } }
   if (b.tk && b.tk.length) {
     let i = keyAt(b.tk, t);
-    if (i < 0) { const A = xformAt(b, t); const k = Object.assign({ t: +t.toFixed(3), ease: 'smooth' }, A); b.tk.push(k); b.tk.sort((p, q) => p.t - q.t); i = b.tk.indexOf(k); }
+    if (i < 0) { const A = xformRaw(b, t); const k = Object.assign({ t: +t.toFixed(3), ease: 'smooth' }, A); b.tk.push(k); b.tk.sort((p, q) => p.t - q.t); i = b.tk.indexOf(k); }
     const k = b.tk[i]; for (const ch in patch) if (XF_CH.includes(ch)) k[ch] = ch === 's' ? +clamp(patch.s, 0.01, 100).toFixed(4) : ch === 'rot' || ch === 'rx' || ch === 'ry' ? +(+patch[ch]).toFixed(2) : Math.round(patch[ch] * 10) / 10;
     return;
   }
@@ -2911,10 +2962,10 @@ function setXf(b, patch, t = T) {
 }
 function insertKey(b, t = T) {
   if (b.type === 'fx') return;
-  b.tk = b.tk || []; const A = xformAt(b, t); const i = keyAt(b.tk, t);
+  b.tk = b.tk || []; const A = xformRaw(b, t); const i = keyAt(b.tk, t);
   if (i >= 0) Object.assign(b.tk[i], A); else { b.tk.push(Object.assign({ t: +t.toFixed(3), ease: 'smooth' }, A)); b.tk.sort((p, q) => p.t - q.t); }
 }
-function clearTk(b, t = T) { if (!b.tk || !b.tk.length) return; const A = xformAt(b, t); b.tk = []; b.x = A.x; b.y = A.y; b.depth = A.depth; b.rot = A.rot; b.rx = A.rx; b.ry = A.ry; if (A.s !== 1) scaleBase(b, A.s); }
+function clearTk(b, t = T) { if (!b.tk || !b.tk.length) return; const A = xformRaw(b, t); b.tk = []; b.x = A.x; b.y = A.y; b.depth = A.depth; b.rot = A.rot; b.rx = A.rx; b.ry = A.ry; if (A.s !== 1) scaleBase(b, A.s); }
 const hasTk = b => !!(b.tk && b.tk.length);
 
 // ================================================================== bake (engine -> transform keys -> camera -> KineMaster-safe)
@@ -2926,7 +2977,7 @@ function camOpt(b, depth, ry = 0) {
 function transformLayers(layers, b, useCam) {
   const anim = hasTk(b), persp = perspOn(b, useCam);
   if (!anim && !useCam && !persp) {
-    const A = restXf(b); if (!A.rot) return layers;
+    const A = xformAt(b, b.start); if (!A.rot && A.s === 1 && !hasXo(b)) return layers;
     return layers.map(L => Object.assign({}, L, { kfs: L.kfs.map(k => { const q = applyXf(k, b, A); q.t = k.t; q.rot = ((q.rot % 360) + 360) % 360; return q; }) }));
   }
   const keyTimes = anim ? b.tk.map(k => k.t) : [];
@@ -2985,6 +3036,12 @@ function flushDirty() {
 /* the fade KineMaster plays with the layer's Fade In / Fade Out animation (what the preview shows) */
 function fadeA(L, t) { let a = L.alpha ?? 1; if (L.fadeIn > 0) a *= Math.min(1, Math.max(0, (t - L.start) / L.fadeIn)); if (L.fadeOut > 0) a *= Math.min(1, Math.max(0, (L.end - t) / L.fadeOut)); return a; }
 /* where the layer's anchor shows in the camera view at time t */
+/* where the layer's origin (pivot) shows in the view */
+function pivotScreen(b, t = T) {
+  const A = xformAt(b, t), [ox, oy] = orgOf(b);
+  if (camOn() && b.cam !== false) { const p = K.projectPose(K.cameraAt(state.camera, t), { depth: A.depth }, { x: A.x + ox, y: A.y + oy, rot: 0, opacity: 1, sx: 1, sy: 1 }); return [p.x, p.y, p.sx]; }
+  return [A.x + ox, A.y + oy, 1];
+}
 function anchorScreen(b, t = T) {
   const A = xformAt(b, t);
   if (camOn() && b.cam !== false) { const p = K.projectPose(K.cameraAt(state.camera, t), { depth: A.depth }, { x: A.x, y: A.y, rot: 0, opacity: 1, sx: 1, sy: 1 }); return [p.x, p.y, p.sx]; }
@@ -3745,7 +3802,7 @@ $$('.mbtn[data-menu]').forEach(b => {
 const VMENUS = {
   vadd: addItems,
   vsel: () => [{ act: 'selectAll' }, { act: 'deselect' }, { act: 'invertSel' }, '-', { label: 'Select camera', act: () => selectCamera() }, { label: 'Select all text', act: () => selectLayers(state.blocks.filter(b => b.type === 'text' && !b.hidden).map(b => b.id)) }, { label: 'Select all photos', act: () => selectLayers(state.blocks.filter(b => b.type === 'photo' && !b.hidden).map(b => b.id)) }],
-  vobj: () => [{ act: 'grab' }, { act: 'rotateOp' }, { act: 'scaleOp' }, '-', { act: 'insertKey' }, { act: 'clearKeys' }, '-', { act: 'duplicate' }, { act: 'delete' }, { act: 'hide' }, { act: 'unhideAll' }, '-', { act: 'raise' }, { act: 'lower' }, { act: 'resetXf' }],
+  vobj: () => [{ act: 'grab' }, { act: 'rotateOp' }, { act: 'scaleOp' }, '-', { act: 'insertKey' }, { act: 'clearKeys' }, '-', { act: 'duplicate' }, { act: 'delete' }, { act: 'hide' }, { act: 'unhideAll' }, '-', { act: 'raise' }, { act: 'lower' }, { act: 'resetXf' }, '-', { act: 'offsetMode' }, { act: 'editOrigin' }, { act: 'resetOrigin' }, { act: 'bakeOffset' }],
 };
 $$('[data-vmenu]').forEach(b => b.onclick = () => { if (popOwner === b) return closeMenu(); const r = b.getBoundingClientRect(); openMenu(VMENUS[b.dataset.vmenu](), r.left, r.bottom + 2, b); });
 $('#oAdd').onclick = e => { const r = e.currentTarget.getBoundingClientRect(); openMenu(addItems(), r.left, r.bottom + 2, e.currentTarget); };
@@ -3937,19 +3994,29 @@ function objectTabHtml(b) {
       <button class="btn sm" id="mKey">Insert keys (I)</button><button class="btn sm" id="mHide">Hide (H)</button></div>
       <p class="desc">G / R / S in the viewport transform them together. Alt+←/→ in the timeline nudges them in time.</p></section>`;
   }
-  const A = xformAt(b, T), anim = hasTk(b), onK = anim && keyAt(b.tk, T) >= 0, ks = anim ? (onK ? 2 : 1) : 0;
+  const A = xformAt(b, T), anim = hasTk(b), onK = anim && keyAt(b.tk, T) >= 0, ks = xoMode ? -1 : anim ? (onK ? 2 : 1) : 0, o = b.xo || XO0(), [ox, oy] = orgOf(b);
   const scaleLbl = b.type === 'text' ? 'Size' : b.type === 'bg' ? 'Oversize' : 'Width', baseVal = b.type === 'text' ? b.size : b.type === 'bg' ? b.bg.cover : b.w;
   const fx = b.type === 'fx';
   const k = anim ? b.tk[keyAt(b.tk, T)] : null;
-  return `${fx ? '' : `<section class="sec"><h2>Transform <span class="hint">${anim ? b.tk.length + ' keys · at playhead' : 'not animated'}</span></h2>
+  return `${fx ? '' : `<section class="sec"><h2>Transform <span class="hint">${xoMode ? 'offset mode · no keys' : anim ? b.tk.length + ' keys · at playhead' : 'not animated'}</span></h2>
+    <div class="row"><label>Edits</label>${seg('xfModeSeg', { keys: 'Key at playhead', offset: 'Offset all keys' }, xoMode ? 'offset' : 'keys')}</div>
     ${xfRow('xfX', 'Location X', A.x, 1, 'px', ks)}${xfRow('xfY', 'Location Y', A.y, 1, 'px', ks)}${xfRow('xfD', 'Depth', A.depth, 5, 'px, further away = bigger', ks)}
-    ${xfRow('xfR', 'Rotation', A.rot, 0.5, 'degrees', ks)}${state.persp && state.persp.on ? xfRow('xfTX', 'Tilt X (3D)', A.rx || 0, 0.5, 'degrees: top leans away', ks) + xfRow('xfTY', 'Tilt Y (3D)', A.ry || 0, 0.5, 'degrees: right side turns away', ks) : ''}${anim ? xfRow('xfS', 'Scale', A.s * 100, 1, '%', ks, 1) : ''}
+    ${xfRow('xfR', 'Rotation', A.rot, 0.5, 'degrees', ks)}${state.persp && state.persp.on ? xfRow('xfTX', 'Tilt X (3D)', A.rx || 0, 0.5, 'degrees: top leans away', ks) + xfRow('xfTY', 'Tilt Y (3D)', A.ry || 0, 0.5, 'degrees: right side turns away', ks) : ''}${anim || xoMode || hasXo(b) ? xfRow('xfS', 'Scale', A.s * 100, 1, '%', ks, 1) : ''}
     ${xfRow('xfB', scaleLbl, baseVal, b.type === 'text' ? 0.05 : b.type === 'bg' ? 0.01 : 1, '', -1, b.type === 'text' || b.type === 'bg' ? 2 : 0)}
     ${b.type === 'photo' ? xfRow('xfYaw', 'Turn (3D)', +b.yaw || 0, 1, 'degrees', -1, 0) : ''}
     <div class="row"><button class="btn sm" id="xfKey">${onK ? 'Update key' : 'Insert key'} <kbd>I</kbd></button>${anim ? '<button class="btn sm ghost" id="xfClear">Clear keys</button>' : ''}<span class="spacer"></span><button class="btn sm ghost" id="xfCx" title="Centre in the frame">Centre</button></div>
     ${k ? `<div class="row"><label for="xfEase">Then move</label><select id="xfEase">${opts(CAM_EASES_K, k.ease || 'smooth')}</select></div>` : ''}
-    <p class="desc">${anim ? 'Changing a value adds or updates the key at the playhead. Keys show as diamonds on this layer\'s timeline bar.' : 'Press I (or a diamond) to key the transform at the playhead, move the playhead, change a value: KineMaster gets the motion as keyframes.'}</p>
-  </section>`}
+    ${hasXo(b) ? `<div class="desc" style="margin-top:6px">Offset on top of ${anim ? 'the keys' : 'the layer'}: ${[['x', 'x', 0, 'px'], ['y', 'y', 0, 'px'], ['depth', 'depth', 0, ''], ['rot', 'rot', 1, '°'], ['rx', 'tilt x', 1, '°'], ['ry', 'tilt y', 1, '°']].filter(([k]) => +o[k]).map(([k, n, d, u]) => `${n} ${+o[k] > 0 ? '+' : ''}${fmt(+o[k], d)}${u}`).concat((o.s ?? 1) !== 1 ? [`scale ×${fmt(o.s, 3)}`] : []).join(' · ')}</div>
+    <div class="row"><button class="btn sm ghost" id="xoBake" title="Write the offset into every key and clear it">Bake into keys</button><button class="btn sm ghost" id="xoReset">Reset offset</button></div>` : ''}
+    <p class="desc">${xoMode ? 'Offset mode: every change moves, turns or scales the whole animation (all keys keep their timing and shape). No key is added. Shift+O switches back.' : anim ? 'Changing a value adds or updates the key at the playhead. Keys show as diamonds on this layer\'s timeline bar. Shift+O: offset the whole animation instead.' : 'Press I (or a diamond) to key the transform at the playhead, move the playhead, change a value: KineMaster gets the motion as keyframes.'}</p>
+  </section>
+  ${b.type === 'bg' ? '' : `<section class="sec"><h2>Origin <span class="hint">pivot for rotation and scale</span></h2>
+    ${xfRow('xfOX', 'Origin X', ox, 1, 'px from the layer centre', -1, 0)}${xfRow('xfOY', 'Origin Y', oy, 1, 'px from the layer centre', -1, 0)}
+    <div class="row"><label>Snap to</label><div class="orgGrid" style="display:grid;grid-template-columns:repeat(3,22px);gap:3px">${[-1, 0, 1].map(gy => [-1, 0, 1].map(gx => { const [w, h] = blockSize(b), on = Math.abs(ox - gx * w / 2) < 0.6 && Math.abs(oy - gy * h / 2) < 0.6; return `<button class="btn sm${on ? ' primary' : ''}" style="padding:0;height:22px" data-org="${gx},${gy}" title="${['Top', 'Middle', 'Bottom'][gy + 1]} ${['left', 'centre', 'right'][gx + 1]}">${on ? '●' : '·'}</button>`; }).join('')).join('')}</div></div>
+    <label class="tog"><input type="checkbox" id="orgKeep" ${ui.orgKeep !== false ? 'checked' : ''}> Keep the layer in place when the origin moves</label>
+    <div class="row"><button class="btn sm" id="orgEdit">Move in viewport <kbd>Shift+P</kbd></button></div>
+    <p class="desc">Rotation and scale (keys and offset) turn around this point. Keep in place adjusts the offset, never the keys.</p>
+  </section>`}`}
   <section class="sec"><h2>Timing</h2>
     <div class="grid3"><label class="field"><span>Start (s)</span><input type="number" id="oS" step="0.05" min="0" value="${fmt(b.start)}"></label>
       <label class="field"><span>End (s)</span><input type="number" id="oE" step="0.05" min="0" value="${fmt(b.end)}"></label>
@@ -3977,9 +4044,16 @@ function bindObjectTab(b) {
     if (ch[id]) setXf(b, { [ch[id]]: ch[id] === 's' ? v / 100 : v });
     else if (id === 'xfB') { if (b.type === 'text') b.size = clamp(v, 0.2, 60); else if (b.type === 'bg') b.bg.cover = clamp(v, 0.5, 6); else { const f = clamp(v, 1, 6000) / (b.w || 1); scaleBase(b, f); } }
     else if (id === 'xfYaw') b.yaw = clamp(v, -89, 89);
+    else if (id === 'xfOX' || id === 'xfOY') { const [ox, oy] = orgOf(b); setOrigin(b, id === 'xfOX' ? v : ox, id === 'xfOY' ? v : oy, ui.orgKeep !== false); }
     if (final) { changed(b); renderProps(); } else { markDirty(b); saveSoon(); }
   };
-  for (const id of [...Object.keys(ch), 'xfB', 'xfYaw']) { const el = $('#' + id); if (el) el.onchange = () => apply(id, +el.value, true); }
+  for (const id of [...Object.keys(ch), 'xfB', 'xfYaw', 'xfOX', 'xfOY']) { const el = $('#' + id); if (el) el.onchange = () => apply(id, +el.value, true); }
+  segBind('#xfModeSeg', v => { xoMode = v === 'offset'; renderProps(); drawAll(); });
+  const xb = $('#xoBake'); if (xb) xb.onclick = () => { bakeOffset(b); changed(b); renderProps(); };
+  const xr = $('#xoReset'); if (xr) xr.onclick = () => { delete b.xo; changed(b); renderProps(); };
+  $$('[data-org]', P).forEach(btn => btn.onclick = () => { const [gx, gy] = btn.dataset.org.split(',').map(Number), [w, h] = blockSize(b); setOrigin(b, gx * w / 2, gy * h / 2, ui.orgKeep !== false); changed(b); renderProps(); });
+  const ok = $('#orgKeep'); if (ok) ok.onchange = e => { ui.orgKeep = e.target.checked; saveUi(); };
+  const oe = $('#orgEdit'); if (oe) oe.onclick = () => { const r = cv.getBoundingClientRect(); startModal('origin', '2d', [r.left + r.width / 2, r.top + r.height / 2]); };
   bindScrub(P, apply);
   $$('[data-kt]', P).forEach(btn => btn.onclick = () => { const i = keyAt(b.tk || [], T); if (i >= 0) { b.tk.splice(i, 1); if (!b.tk.length) clearTk(b); } else insertKey(b); changed(b); renderProps(); drawTimeline(); });
   const kb = $('#xfKey'); if (kb) kb.onclick = () => { insertKey(b); changed(b); renderProps(); toast(`Key at ${fmt(T)}s.`, false, 1200); };
@@ -4314,6 +4388,7 @@ function drawStage() {
     layerAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  if (xoMode && guides) { const fs = Math.round(cv.width * 0.03); ctx.font = `600 ${fs}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(10,30,40,.75)'; const tw = ctx.measureText('OFFSET MODE · Shift+O').width; ctx.fillRect(fs * 0.6, fs * 0.6 + (noPv.length ? fs * 1.6 : 0), tw + fs * 0.8, fs * 1.5); ctx.fillStyle = '#4fd1ff'; ctx.fillText('OFFSET MODE · Shift+O', fs, fs * 0.85 + (noPv.length ? fs * 1.6 : 0)); }
   if (noPv.length && guides) { ctx.font = `${11 * R * 1.6}px sans-serif`; ctx.fillStyle = 'rgba(245,181,63,.95)'; ctx.textBaseline = 'top'; ctx.fillText('No preview: ' + noPv.join(', '), 10 * R, 10 * R); }
   ctx.setTransform(R, 0, 0, R, 0, 0);
   const light = isLight(state.bg);
@@ -4325,6 +4400,10 @@ function drawStage() {
       const box = selBox(b); if (!box) continue; const act = b.id === S.active;
       const [x0, y0, x1, y1] = box; ctx.strokeStyle = act ? '#ffaa40' : '#f07a1f'; ctx.lineWidth = (act ? 1.6 : 1.2) / R; ctx.strokeRect(x0 - 4, y0 - 4, x1 - x0 + 8, y1 - y0 + 8);
       const [ax, ay] = anchorScreen(b); ctx.beginPath(); ctx.arc(ax, ay, 4 / R * 1.4, 0, 7); ctx.stroke();
+      if (act && (hasOrg(b) || (modal && modal.op === 'origin'))) {   // origin: a crosshair in a ring
+        const [px, py] = pivotScreen(b), q = 9 / R * 1.4; ctx.save(); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = 1.6 / R;
+        ctx.beginPath(); ctx.arc(px, py, q * 0.6, 0, 7); ctx.moveTo(px - q, py); ctx.lineTo(px + q, py); ctx.moveTo(px, py - q); ctx.lineTo(px, py + q); ctx.stroke(); ctx.restore();
+      }
       if (act && S.ids.size === 1 && !modal) for (const h of handlesFor(b)) {
         const dpr = cv.width / cv.getBoundingClientRect().width; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#ffaa40'; ctx.lineWidth = 1.5 * dpr / R; const s = 6 * dpr / R;
         if (h.kind === 'rot') { ctx.beginPath(); ctx.moveTo((x0 + x1) / 2, y0 - 4); ctx.lineTo(h.x, h.y); ctx.stroke(); ctx.beginPath(); ctx.arc(h.x, h.y, s, 0, 7); ctx.fill(); ctx.stroke(); }
@@ -4416,8 +4495,8 @@ cv.addEventListener('pointerup', endStageDrag); cv.addEventListener('pointercanc
 // ================================================================== modal transforms (G / R / S), both views
 let modal = null;
 const hud = (() => { const h = document.createElement('div'); h.className = 'modal-hud'; h.hidden = true; return h; })();
-function xfSnapshot(b) { return { rx: b.rx, ry: b.ry, x: b.x, y: b.y, depth: b.depth, rot: b.rot, size: b.size, w: b.w, h: b.h, yaw: b.yaw, cover: b.bg && b.bg.cover, tk: clone(b.tk || []) }; }
-function xfRestore(b, s) { b.rx = s.rx; b.ry = s.ry; b.x = s.x; b.y = s.y; b.depth = s.depth; b.rot = s.rot; b.size = s.size; b.w = s.w; b.h = s.h; b.yaw = s.yaw; if (b.bg && s.cover !== undefined) b.bg.cover = s.cover; b.tk = clone(s.tk); }
+function xfSnapshot(b) { return { xo: b.xo ? clone(b.xo) : null, org: b.org ? clone(b.org) : null, rx: b.rx, ry: b.ry, x: b.x, y: b.y, depth: b.depth, rot: b.rot, size: b.size, w: b.w, h: b.h, yaw: b.yaw, cover: b.bg && b.bg.cover, tk: clone(b.tk || []) }; }
+function xfRestore(b, s) { if (s.xo) b.xo = clone(s.xo); else delete b.xo; if (s.org) b.org = clone(s.org); else delete b.org; b.rx = s.rx; b.ry = s.ry; b.x = s.x; b.y = s.y; b.depth = s.depth; b.rot = s.rot; b.size = s.size; b.w = s.w; b.h = s.h; b.yaw = s.yaw; if (b.bg && s.cover !== undefined) b.bg.cover = s.cover; b.tk = clone(s.tk); }
 function camWorld(c) { return [c.x, c.y, c.z - K.CAM_F]; }
 /* op: 'grab' | 'rotate' | 'scale'; view: '2d' | '3d'; start: client [x, y] */
 function startModal(op, view, start, o = {}) {
@@ -4430,7 +4509,8 @@ function startModal(op, view, start, o = {}) {
   } else {
     const list = selected().filter(b => !b.locked && b.type !== 'fx' && (op !== 'scale' || true));
     if (!list.length) { toast('Select a layer or the camera first.', false, 1600); return; }
-    targets = list.map(b => ({ kind: 'layer', b, snap: xfSnapshot(b), A0: xformAt(b, T) }));
+    targets = list.map(b => ({ kind: 'layer', b, snap: xfSnapshot(b), A0: xformAt(b, T), org0: orgOf(b) }));
+    if (op === 'origin' && (view !== '2d' || targets.length !== 1)) { toast(view !== '2d' ? 'Move the origin in the camera view (2D).' : 'Select one layer to move its origin.', false, 2000); return; }
   }
   modal = { op, view, start, cur: start.slice(), axis: null, plane: false, num: '', drag: !!o.drag, targets };
   // pivot (screen px for 2d: stage units; for 3d: client px)
@@ -4438,7 +4518,7 @@ function startModal(op, view, start, o = {}) {
     const r = cv.getBoundingClientRect(), toStage = p => [(p[0] - r.left) / r.width * ST.W, (p[1] - r.top) / r.height * ST.H];
     modal.toStage = toStage;
     if (useCam) modal.pivot = [CX(), CY()];
-    else { let sx = 0, sy = 0; for (const t of targets) { const [ax, ay] = anchorScreen(t.b); sx += ax; sy += ay; } modal.pivot = [sx / targets.length, sy / targets.length]; }
+    else { let sx = 0, sy = 0; for (const t of targets) { const [ax, ay] = op === 'grab' ? anchorScreen(t.b) : pivotScreen(t.b); sx += ax; sy += ay; } modal.pivot = [sx / targets.length, sy / targets.length]; }
     modal.cur = toStage(start); modal.s0 = modal.cur.slice();
   } else {
     if (useCam) { const w = camWorld(modal.targets[0].c0); modal.origin = w; }
@@ -4531,10 +4611,19 @@ function applyModal() {
     let f = 1 + (d1 / d0 - 1) * fine; if (nv !== null) f = nv; f = Math.max(0.01, f);
     for (const t of M.targets) {
       const b = t.b;
-      if (hasTk(b)) setXf(b, { s: t.A0.s * f }); else scaleBase(b, f);
+      if (hasTk(b) || xoMode) setXf(b, { s: t.A0.s * f }); else scaleBase(b, f);
       if (M.targets.length > 1 && M.view === '2d' && !camOn()) { const [px, py] = [t.A0.x, t.A0.y]; setXf(b, { x: M.pivot[0] + (px - M.pivot[0]) * f, y: M.pivot[1] + (py - M.pivot[1]) * f }); }
     }
     info = `Scale ${fmt(f, 3)}×`;
+  } else if (M.op === 'origin') {
+    const t = M.targets[0], b = t.b, sc = anchorScreen(b)[2] || 1, keep = ui.orgKeep !== false;
+    let DX = (M.cur[0] - M.s0[0]) * fine / sc, DY = (M.cur[1] - M.s0[1]) * fine / sc, dx = DX, dy = DY;
+    if (keep) { const a = -t.A0.rot * D2R, k = 1 / (t.A0.s || 1); dx = (DX * Math.cos(a) - DY * Math.sin(a)) * k; dy = (DX * Math.sin(a) + DY * Math.cos(a)) * k; }   // into the layer's own frame
+    if (ax === 'x') dy = 0; else if (ax === 'y') dx = 0;
+    let nx = t.org0[0] + dx, ny = t.org0[1] + dy;
+    if (!M.noSnap) { const [w, h] = blockSize(b), sn = 10 / sc; for (const gx of [-w / 2, 0, w / 2]) if (Math.abs(nx - gx) < sn) nx = gx; for (const gy of [-h / 2, 0, h / 2]) if (Math.abs(ny - gy) < sn) ny = gy; }
+    setOrigin(b, nx, ny, keep);
+    info = `Origin  x ${fmt(nx, 0)}  y ${fmt(ny, 0)} px from centre${ui.orgKeep !== false ? '' : '  (layer moves)'}   ·  snaps to edges and centre, Ctrl: free`;
   }
   M.info = info; modalHud();
   if (M.targets[0].kind === 'camera') { camChanged(); updateCameraFields(); }
@@ -4544,7 +4633,7 @@ function e_ctrlSnap() { return false; }
 function modalHud() {
   if (!modal) return;
   const ax = modal.axis ? `  ·  ${modal.plane ? 'plane without ' : 'along '}${modal.axis.toUpperCase()}${modal.axis === 'z' ? ' (depth)' : ''}` : '';
-  hud.textContent = (modal.info || { grab: 'Move', rotate: 'Rotate', scale: 'Scale' }[modal.op]) + ax + (modal.num ? `   [${modal.num}]` : '') + (modal.slow ? '   · precise (Shift)' : '');
+  hud.textContent = (xoMode && modal.op !== 'origin' ? 'Offset · ' : '') + (modal.info || { grab: 'Move', rotate: 'Rotate', scale: 'Scale', origin: 'Origin' }[modal.op]) + ax + (modal.num ? `   [${modal.num}]` : '') + (modal.slow ? '   · precise (Shift)' : '');
 }
 function confirmModal() {
   if (!modal) return; const M = modal; modal = null; hud.hidden = true; document.body.style.cursor = ''; snapX = snapY = false;
@@ -4566,7 +4655,7 @@ function modalKey(e) {
   if (/^[0-9.]$/.test(k)) { modal.num += k; applyModal(); return true; }
   if (k === '-') { modal.num = modal.num.startsWith('-') ? modal.num.slice(1) : '-' + modal.num; applyModal(); return true; }
   if (k === 'Backspace') { modal.num = modal.num.slice(0, -1); applyModal(); return true; }
-  if (k === 'g' || k === 'r' || k === 's') { const op = { g: 'grab', r: 'rotate', s: 'scale' }[k]; if (op !== modal.op) { const M = modal; cancelModal(); startModal(op, M.view, M.view === '2d' ? lastClient : lastClient); } return true; }
+  if ((k === 'g' || k === 'r' || k === 's') && modal.op !== 'origin') { const op = { g: 'grab', r: 'rotate', s: 'scale' }[k]; if (op !== modal.op) { const M = modal; cancelModal(); startModal(op, M.view, M.view === '2d' ? lastClient : lastClient); } return true; }
   return true;   // swallow everything else while transforming
 }
 let lastClient = [0, 0];
@@ -5281,7 +5370,7 @@ const in3d = () => viewMode === '3d' || (viewMode === 'both' && hoverView === '3
 async function viewOp(fn) { if (viewMode === 'cam') await setView('3d'); else await ensure3dView(); if (view3d) fn(view3d); }
 function clearChannel(which) {
   for (const b of selected()) {
-    if (which === 'loc') setXf(b, { x: CX(), y: CY() }); else if (which === 'rot') { setXf(b, { rot: 0 }); b.yaw = 0; } else if (hasTk(b)) setXf(b, { s: 1 });
+    if (which === 'loc') setXf(b, { x: CX(), y: CY() }); else if (which === 'rot') { setXf(b, { rot: 0 }); b.yaw = 0; } else if (hasTk(b) || xoMode) setXf(b, { s: 1 });
     changed(b);
   }
   renderProps();
@@ -5293,7 +5382,7 @@ const VP = ['viewport'], VPO = ['viewport', 'outliner'], VPOP = ['viewport', 'ou
 const ACT = {
   newProject: { label: 'New project', keys: [['ctrl+alt+n', '*']], run: newProject },
   open: { label: 'Open .kine / recipe…', keys: [['ctrl+o', '*']], run: () => $('#fileIn').click() },
-  saveRecipe: { label: 'Save recipe (.json)', keys: [['ctrl+s', '*']], run: async () => { try { const res = await offer(safeName(state.title) + '.json', new TextEncoder().encode(JSON.stringify(toRecipe(), null, 2))); if (res === 'saved') toast('Recipe saved. The project also autosaves in this browser.'); } catch (err) { toast('Export failed: ' + err.message, true); } } },
+  saveRecipe: { label: 'Save recipe (.json)', keys: [['ctrl+s', '*']], run: async () => { try { const rec = toRecipe(), sv = await recipeVideos(); if (sv) rec.studio_videos = sv; const res = await offer(safeName(state.title) + '.json', new TextEncoder().encode(JSON.stringify(rec, null, 2))); if (res === 'saved') toast('Recipe saved. The project also autosaves in this browser.'); } catch (err) { toast('Export failed: ' + err.message, true); } } },
   export: { label: 'Export .kine for KineMaster', keys: [['ctrl+e', '*']], run: () => { if (!state.blocks.length && !base) return toast('Add at least one layer first.', true); exportKine(buildKine(), state.title); } },
   restore: { label: 'Restore last session', enabled: () => !!localStorage.getItem(STORE_KEY), run: () => { const s = restore(); if (!s) return toast('No saved session.'); if (base) closeBase(); state = s; S.ids.clear(); S.cam = false; S.keys.clear(); setActive(null); bakeAll(); state.blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); loadMedia(); refreshAll(); setTime(0); toast('Restored your last session.'); } },
   compatTest: { label: 'KineMaster compatibility test', run: () => exportKine(buildCompatTest(), 'kinekit compatibility test', 'Open it in KineMaster: 1 text that moves, rotates and scales, 1 picture with a fade in and out.') },
@@ -5343,6 +5432,10 @@ const ACT = {
   rotateOp: { label: 'Rotate', keys: [['r', VP]], run: () => startModal('rotate', in3d() && view3d ? '3d' : '2d', lastClient) },
   scaleOp: { label: 'Scale', keys: [['s', VP]], run: () => startModal('scale', in3d() && view3d ? '3d' : '2d', lastClient) },
   resetXf: { label: 'Clear location', keys: [['alt+g', VP]], run: () => clearChannel('loc') },
+  offsetMode: { label: 'Offset mode (re-transform without keys)', keys: [['shift+o', VP]], check: () => xoMode, run: () => { xoMode = !xoMode; toast(xoMode ? 'Offset mode: Move / Rotate / Scale and the Transform fields now shift the whole animation. No keys are added.' : 'Offset mode off: edits key the transform again.', false, 3200); renderProps(); drawAll(); updateHints(); } },
+  editOrigin: { label: 'Move origin (pivot)', keys: [['shift+p', VP]], run: () => { if (!S.active) return toast('Select a layer first.', false, 1500); startModal('origin', '2d', lastClient); } },
+  resetOrigin: { label: 'Reset origin to centre', run: () => { for (const b of selected()) { setOrigin(b, 0, 0, ui.orgKeep !== false); changed(b); } renderProps(); } },
+  bakeOffset: { label: 'Bake offset into keys', run: () => { for (const b of selected()) { bakeOffset(b); changed(b); } renderProps(); toast('Offset applied to the keys.', false, 1500); } },
   clearRot: { label: 'Clear rotation', keys: [['alt+r', VP]], run: () => clearChannel('rot') },
   clearScale: { label: 'Clear scale', keys: [['alt+s', VP]], run: () => clearChannel('scale') },
   viewCam: { label: 'Camera view', keys: [['alt+1', '*']], check: () => viewMode === 'cam', run: () => setView('cam') },
@@ -5495,7 +5588,7 @@ function updateHints() {
   const el = $('#hints'); if (!el) return;
   let parts;
   if (hintOverride) parts = [esc(hintOverride)];
-  else if (modal) parts = [`<b style="color:var(--act)">${{ grab: 'Move', rotate: 'Rotate', scale: 'Scale' }[modal.op]}</b>`, `${kb('X')}${kb('Y')}${kb('Z')} lock axis${modal.view === '3d' ? ' (Shift = plane)' : ''}`, `type a value`, `${kb('Enter')} / LMB confirm`, `${kb('Esc')} / RMB cancel`, `${kb('Shift')} fine`, modal.op === 'grab' && modal.view === '2d' ? `${kb('Ctrl')} no snap` : ''];
+  else if (modal) parts = [`<b style="color:var(--act)">${(xoMode && modal.op !== 'origin' ? 'Offset · ' : '') + { grab: 'Move', rotate: 'Rotate', scale: 'Scale', origin: 'Move origin' }[modal.op]}</b>`, `${kb('X')}${kb('Y')}${kb('Z')} lock axis${modal.view === '3d' ? ' (Shift = plane)' : ''}`, `type a value`, `${kb('Enter')} / LMB confirm`, `${kb('Esc')} / RMB cancel`, `${kb('Shift')} fine`, modal.op === 'grab' && modal.view === '2d' ? `${kb('Ctrl')} no snap` : ''];
   else if (hoverArea === 'timeline') parts = [`${kb('Space')} play`, `${kb('J')}${kb('K')}${kb('L')} shuttle`, `${kb('I')}${kb('O')} in / out`, `${kb('Ctrl')}+${kb('K')} split`, `${kb('V')} select ${kb('C')} razor`, `${kb('S')} snap`, `${kb('Alt')}+wheel zoom`, `drag empty = box select`, tlUi.tool === 'razor' ? '<b style="color:var(--act)">Razor: click a clip to cut</b>' : ''];
   else if (hoverArea === 'outliner') parts = ['click select', `${kb('Shift')} range ${kb('Ctrl')} toggle`, 'drag to restack', 'double-click rename', `${kb('H')} hide`, `${kb('X')} delete`];
   else if (hoverArea === 'properties') parts = ['drag a label to scrub a value', `${kb('Ctrl')} fine`, `◆ key at playhead`, `${kb('I')} insert key`];
@@ -6257,7 +6350,7 @@ function askKineOpen(buf, name) {
 const PIN_ORDERS = { z: ['TL, TR, BL, BR (Z order)', [0, 1, 3, 2]], cw: ['TL, TR, BR, BL (clockwise)', [0, 1, 2, 3]] };
 const LOGICAL = [[-1, -1], [1, -1], [1, 1], [-1, 1]];   // corner 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left (layer space, y down)
 const pinSlots = () => (PIN_ORDERS[(state.persp || {}).order] || PIN_ORDERS.z)[1];   // pin slot i holds logical corner pinSlots()[i]
-const tiltOf = b => { const A = restXf(b); return Math.abs(A.rx) > 0.01 || Math.abs(A.ry) > 0.01 || (b.tk || []).some(k => Math.abs(k.rx || 0) > 0.01 || Math.abs(k.ry || 0) > 0.01) || (b.type === 'photo' && Math.abs(+b.yaw || 0) > 0.01); };
+const tiltOf = b => { const A = restXf(b); return Math.abs(A.rx) > 0.01 || Math.abs(A.ry) > 0.01 || (b.tk || []).some(k => Math.abs(k.rx || 0) > 0.01 || Math.abs(k.ry || 0) > 0.01) || (b.type === 'photo' && Math.abs(+b.yaw || 0) > 0.01) || !!(b.xo && (Math.abs(+b.xo.rx || 0) > 0.01 || Math.abs(+b.xo.ry || 0) > 0.01)); };
 function perspOn(b, useCam) {
   const P = state.persp; if (!P || !P.on || b.persp === false || b.type === 'fx') return false;
   return !!useCam || tiltOf(b);
@@ -7142,7 +7235,7 @@ function toRecipe() {
     const l = loopSpec(b.loop); if (l) t.loop = l;
     if (b.style) t.studio_style = b.style;
     if (b.sfx.in || b.sfx.out) { t.sfx = { per: b.sfx.per === 'letter' ? 'unit' : b.sfx.per, pitch: PITCH[b.sfx.pitch], volume: b.sfx.volume }; if (b.sfx.in) t.sfx.in = b.sfx.in; if (b.sfx.out) t.sfx.out = b.sfx.out; }
-    t.studio = { id: b.id, fx: b.fx, extrude: b.extrude, shape: b.shape, real3d: b.real3d, slot: b.slot, loop: b.loop, reflect: b.reflect, depth: b.depth, cam: b.cam, rot: b.rot, tk: b.tk, opacity: b.opacity, blend: b.blend, animators: b.animators, kmPins: b.kmPins, fontUri: b.fontUri, rx: b.rx, ry: b.ry, persp: b.persp };
+    t.studio = { id: b.id, fx: b.fx, extrude: b.extrude, shape: b.shape, real3d: b.real3d, slot: b.slot, loop: b.loop, reflect: b.reflect, depth: b.depth, cam: b.cam, rot: b.rot, tk: b.tk, opacity: b.opacity, blend: b.blend, animators: b.animators, kmPins: b.kmPins, fontUri: b.fontUri, rx: b.rx, ry: b.ry, persp: b.persp, xo: b.xo, org: b.org };
     return t;
   });
   const r = { title: state.title, aspect: state.aspect, background: state.bg, bpm: state.bpm, beat_offset: state.beatOffset, texts };
@@ -7161,6 +7254,21 @@ function toRecipe() {
 function hasAlpha(c) {
   try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) return true; } catch (e) {}
   return false;
+}
+/* clips carried inside a recipe: {id: {name, ext, data: dataURL}} -> this browser's video store, keeping their ids so
+   the recipe's video layers find them (no relinking by hand) */
+let recipeLoad = Promise.resolve();
+async function loadRecipeVideos(m) {
+  if (!m) return; let n = 0;
+  for (const [id, v] of Object.entries(m)) { try { const bl = await (await fetch(v.data)).blob(); await registerVideo(id, bl, v.name || id, v.ext || 'mp4'); n++; } catch (e) { console.warn('clip', id, e); } }
+  if (n) { bakeAll(); renderProps(); updateStats(); drawAll(); saveSoon(); toast(`Loaded ${n} clip${n === 1 ? '' : 's'} from the recipe.`); }
+}
+/* the clips a project uses, packed for a recipe file (so it opens complete in any browser) */
+async function recipeVideos() {
+  const ids = new Set(state.blocks.filter(b => b.type === 'video').map(b => String(b.video.src).slice(4))), out = {};
+  for (const id of ids) { const bl = await idb.get('vid:' + id); if (!bl) continue; const m = binEntry(id) || {};
+    out[id] = { name: m.name || id, ext: m.ext || 'mp4', data: await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(bl); }) }; }
+  return Object.keys(out).length ? out : null;
 }
 /* photos carried inside a recipe: {id: dataURL} -> this browser's photo store */
 async function loadRecipeMedia(m) {
@@ -7188,7 +7296,7 @@ function fromRecipe(r) {
     if (t.fx) for (const [k, v] of Object.entries(t.fx)) if (b.fx[k]) { const c = km(v.color); b.fx[k] = { on: v.on !== false, color: c.rgb + Math.round(c.a * 255).toString(16).padStart(2, '0').toUpperCase() }; }
     if (t.extrude) Object.assign(b.extrude, t.extrude, { on: t.extrude.on !== false });
     if (t.shape && t.shape.kind) { const c = km(t.shape.color || '#FF5B3D'); Object.assign(b.shape, t.shape, { color: c.rgb, alpha: t.shape.alpha ?? c.a }); }
-    if (t.studio) { for (const k of ['fx', 'extrude', 'shape', 'real3d', 'slot', 'reflect', 'animators', 'kmPins', 'fontUri', 'rx', 'ry', 'persp']) if (t.studio[k] !== undefined) b[k] = clone(t.studio[k]); if (t.studio.loop) b.loop = clone(t.studio.loop); if (t.studio.id) b.id = t.studio.id; if (t.studio.depth !== undefined) b.depth = t.studio.depth; if (t.studio.cam !== undefined) b.cam = t.studio.cam; if (t.studio.opacity !== undefined) b.opacity = t.studio.opacity; if (t.studio.blend !== undefined) b.blend = t.studio.blend; if (t.studio.rot !== undefined) b.rot = t.studio.rot; if (t.studio.tk) b.tk = clone(t.studio.tk); }
+    if (t.studio) { for (const k of ['fx', 'extrude', 'shape', 'real3d', 'slot', 'reflect', 'animators', 'kmPins', 'fontUri', 'rx', 'ry', 'persp', 'xo', 'org']) if (t.studio[k] !== undefined) b[k] = clone(t.studio[k]); if (t.studio.loop) b.loop = clone(t.studio.loop); if (t.studio.id) b.id = t.studio.id; if (t.studio.depth !== undefined) b.depth = t.studio.depth; if (t.studio.cam !== undefined) b.cam = t.studio.cam; if (t.studio.opacity !== undefined) b.opacity = t.studio.opacity; if (t.studio.blend !== undefined) b.blend = t.studio.blend; if (t.studio.rot !== undefined) b.rot = t.studio.rot; if (t.studio.tk) b.tk = clone(t.studio.tk); }
     return fill(b);
   });
   const sc = r.studio_scene;
@@ -7197,7 +7305,7 @@ function fromRecipe(r) {
     music: { asset: (r.audio && r.audio[0] && r.audio[0].asset) || '', volume: (r.audio && r.audio[0] && r.audio[0].volume) || 50 },
     rgb: { on: !!(r.effects && r.effects.find(e => e.asset === '3dGlasses')), amount: (r.effects && r.effects[0] && r.effects[0].params && r.effects[0].params.distance) || 0.6 }, blocks });
   projectExtrasIn(r.studio_project);
-  bakeAll(); blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); S.ids.clear(); S.cam = false; S.keys.clear(); S.kind = 'layers'; if (blocks[0]) { S.ids.add(blocks[0].id); setActive(blocks[0].id); } bindProject(); renderBlocks(); renderInspector(); renderCamera(); updateStats(); setTime(0); saveSoon(); loadRecipeMedia(r.studio_media).then(() => loadMedia());
+  bakeAll(); blocks.forEach(b => b.type === 'text' && queue3d(b, 0)); S.ids.clear(); S.cam = false; S.keys.clear(); S.kind = 'layers'; if (blocks[0]) { S.ids.add(blocks[0].id); setActive(blocks[0].id); } bindProject(); renderBlocks(); renderInspector(); renderCamera(); updateStats(); setTime(0); saveSoon(); recipeLoad = loadRecipeMedia(r.studio_media).then(() => loadMedia()).then(() => loadRecipeVideos(r.studio_videos));
 }
 function resetExample() { loadScene('kinetic'); }
 // ------------------------------------------------------------------ files in
@@ -7390,7 +7498,7 @@ async function boot() {
   if (hasAutosave) toast('New blank scene. Your last session is still saved: File › Restore last session.', false, 4500);
   let v = 'cam'; try { v = localStorage.getItem('kinekit-view') || 'cam'; } catch (e) {}
   if (v !== 'cam') setView(v);
-  window.__studio = { buildPinTest, buildCompatTest, buildFadeTest, setView, view: () => view3d, state: () => state, S, baked, assets, buildKine, loadScene, toRecipe, fromRecipe, setTime, K, run, ACT, selectLayers, selectCamera, selectKeys, startModal, confirmModal, cancelModal, applyModal, modal: () => modal, xformAt, setXf, insertKey, bakeAll, drawAll, pause, T: () => T, tlGeo: () => tlGeo, comboOf, findAction, renderFrameAt, fitChars, slotsOf, slotIssues, exportSlotSheet, buildEaseTest, kfTotals, optimizeKfs, togglePanel, importVideo, registerVideo, idb, loadVideoBlob, addVideoLayer, videosSettled, vids, addFx, buildEaseTest, fxExportKeys, setBgMode, bgMode, mediaInventory, mediaUse, binAdd, speedAt, warp, warpOn, outLength, addSpeedKey, warpResult, screenQuad, worldQuad, xformAt, restXf, reframeTo, reframeState, openReframe, importKineLayers, askKineOpen, openKine, importMusic, detectBeat, applyBeat, musicInfo: () => musicInfo, setMusicBuffer, animFor: K.ANIMATORS, beatCascade, beatPulseSel, ui: () => ui, tlUi: () => tlUi };
+  window.__studio = { xo: { setXf: (...a) => setXf(...a), mode: v => { if (v !== undefined) xoMode = !!v; return xoMode; }, setOrigin, bakeOffset, xformAt, xformRaw, applyXf, pivotScreen, blockSize }, recipeLoad: () => recipeLoad, buildPinTest, buildCompatTest, buildFadeTest, setView, view: () => view3d, state: () => state, S, baked, assets, buildKine, loadScene, toRecipe, fromRecipe, setTime, K, run, ACT, selectLayers, selectCamera, selectKeys, startModal, confirmModal, cancelModal, applyModal, modal: () => modal, xformAt, setXf, insertKey, bakeAll, drawAll, pause, T: () => T, tlGeo: () => tlGeo, comboOf, findAction, renderFrameAt, fitChars, slotsOf, slotIssues, exportSlotSheet, buildEaseTest, kfTotals, optimizeKfs, togglePanel, importVideo, registerVideo, idb, loadVideoBlob, addVideoLayer, videosSettled, vids, addFx, buildEaseTest, fxExportKeys, setBgMode, bgMode, mediaInventory, mediaUse, binAdd, speedAt, warp, warpOn, outLength, addSpeedKey, warpResult, screenQuad, worldQuad, xformAt, restXf, reframeTo, reframeState, openReframe, importKineLayers, askKineOpen, openKine, importMusic, detectBeat, applyBeat, musicInfo: () => musicInfo, setMusicBuffer, animFor: K.ANIMATORS, beatCascade, beatPulseSel, ui: () => ui, tlUi: () => tlUi };
 }
 boot();
 })();
