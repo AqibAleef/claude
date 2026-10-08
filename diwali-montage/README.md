@@ -80,16 +80,32 @@ A warm grade, film grain and a vignette sit over everything.
 | 19 | clip `anaar` (fountain) |
 | 20 hero | photo: field of diyas (soft scrim behind HAPPY DIWALI) |
 
-**Elements from the zip:**
-- **Diya:** stray specks removed. It's the diya left glowing at the end.
-- **Rangoli:** soft-masked into a medallion that turns under DIWALI.
-- **Lantern:** baked backdrop keyed out, then mirrored for the two hanging lanterns in the hero shot.
-- **Not used:** `fireworks.png` and `golden_particle_trail.png` have their beige background baked in, and `happy_diwali_title.png` is cut off ("HAPPY DIWA"). The drawn light elements cover these instead.
+**Elements** (all trimmed to their own pixels so they sit centred on their anchor point, and placed centred in the frame):
+
+| Element | Where |
+|---|---|
+| Ornate "HAPPY DIWALI" title | the hero title (push reveal), with a gold particle swirl behind it |
+| Lantern set | hangs centred over the hero shot, swaying gently |
+| Red-gold mandala | turns slowly behind DIWALI |
+| Rangoli with diyas | turns under DIWALI |
+| Golden arc | two arcs orbit the DIWALI title like firework trails |
+| Firework sheets | the three bursts in the DIWALI section, and the finale burst behind the title |
+| Gold particle "S" swirl | the light sweep that reveals DIWALI |
+| Diya with gold swirl | the one diya left glowing after the fade to black |
+
+**Particle videos** are brightened, trimmed to 4.2 s and laid over the footage with Screen blend, so their black background disappears:
+
+| Video | Where |
+|---|---|
+| Bokeh loop | the intro and the hero |
+| Main Particle ring | centred behind DIWALI |
+| Particles 01 | the fast montage |
+| Particles 02 | the LIGHT / LOVE / CELEBRATE section |
 
 `media/` holds the prepared clips (720×1280 MP4), the 9:16 photo crops and the cleaned elements. To re-cut from the source files:
 
 ```bash
-python3 tools/media_prep.py 1008.mp4 PHOTOS_DIR ELEMENTS_DIR media      # photos named 1.jpg..5.jpg as sent
+python3 tools/media_prep.py 1008.mp4 PHOTOS_DIR ELEMENTS_DIR media SHEETS_DIR PARTICLES_DIR   # photos 1-5.jpg, sheets 6-10.webp, particle videos
 python3 tools/build_diwali_real.py assets media tools/template.recipe.json tools/dw_widths.json Diwali_Montage_9x16_REAL.recipe.json
 ```
 

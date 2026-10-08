@@ -1,6 +1,8 @@
 """Prepare the real Diwali media: cut clips from the source video, crop the photos to 9:16, clean the zip elements.
 
-    python3 media_prep.py SOURCE_VIDEO PHOTOS_DIR ELEMENTS_DIR OUT_DIR
+    python3 media_prep.py SOURCE_VIDEO PHOTOS_DIR ELEMENTS_DIR OUT_DIR [SHEETS_DIR PARTICLES_DIR]
+
+SHEETS_DIR holds the element sheets (6-10.webp), PARTICLES_DIR the particle overlay videos (black background).
 
 OUT_DIR/clips/*.mp4     720x1280, no audio, short GOP (seeks cleanly in the Studio and KineMaster)
 OUT_DIR/photos/*.jpg    1080x1920 crops around the subject
@@ -98,5 +100,40 @@ def elements():
     for n in ('diya', 'rangoli_medallion', 'lantern'): print('element', n, Image.open(os.path.join(d, n + '.png')).size)
 
 
+SHEET_ELEMENTS = {   # name: (sheet, cell (col, row) on the 3x2 grid sheets, or None for a single-element sheet)
+    'title_happy_diwali': ('8', (0, 0)), 'fireworks_gold': ('8', (1, 0)), 'fireworks_multi': ('7', (2, 0)), 'diya_swirl': ('7', (1, 0)),
+    'mandala_redgold': ('8', (0, 1)), 'lanterns': ('8', (1, 1)), 'swirl_wave': ('8', (2, 1)), 'swirl_s': ('7', (2, 1)),
+    'arc': ('9', None), 'rangoli_diyas': ('10', None),
+}
+PARTICLES = {   # name: (source file, brightness gain, square output side or None for 9:16)
+    'bokeh_loop': ('Bokeh_Particular_Loop.mp4', 5.0, 900), 'particle_ring': ('Main_Particle_03.mp4', 2.6, 900),
+    'dust_a': ('Particles_01.mp4', 1.8, None), 'dust_b': ('Particles_02.mp4', 2.5, None),
+}
+
+
+def sheet_elements(sheet_dir):
+    """cut each element out of the sheets, trim to its own pixels so it sits centred on its anchor"""
+    d = os.path.join(OUT, 'elements'); os.makedirs(d, exist_ok=True)
+    for name, (sheet, cell) in SHEET_ELEMENTS.items():
+        im = Image.open(os.path.join(sheet_dir, sheet + '.webp')).convert('RGBA')
+        if cell:
+            cw, ch = im.width / 3, im.height / 2; c, r = cell
+            im = im.crop((round(c * cw) + 12, round(r * ch) + 12, round((c + 1) * cw) - 12, round((r + 1) * ch) - 12))
+        a = np.asarray(im.getchannel('A')); ys, xs = np.where(a > 10)
+        im = im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+        im.save(os.path.join(d, name + '.png')); print('element', name, im.size)
+
+
+def particle_clips(src_dir, secs=4.2):
+    d = os.path.join(OUT, 'clips'); os.makedirs(d, exist_ok=True)
+    for name, (f, gain, side) in PARTICLES.items():
+        vf = (f'crop=min(iw\\,ih):min(iw\\,ih),scale={side}:{side}' if side else 'scale=720:1280') + f',format=rgb24,lutrgb=r=val*{gain}:g=val*{gain}:b=val*{gain},format=yuv420p'
+        dst = os.path.join(d, name + '.mp4')
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-t', str(secs), '-i', os.path.join(src_dir, f), '-an', '-vf', vf, '-c:v', 'libx264', '-preset', 'medium',
+                        '-crf', '24', '-g', '15', '-movflags', '+faststart', dst], check=True)
+        print('particles', dst, os.path.getsize(dst) // 1024, 'KB')
+
+
 if __name__ == '__main__':
     clips(); photos(); elements()
+    if len(sys.argv) > 6: sheet_elements(sys.argv[5]); particle_clips(sys.argv[6])

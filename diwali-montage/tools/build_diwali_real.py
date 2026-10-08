@@ -44,16 +44,19 @@ def add_media(mid, path, max_w=None):
 
 
 PHOTO = {k: add_media('ph_' + k, f'{MEDIA}/photos/{k}.jpg', 720) for k in ['diya_dark', 'diya_rows', 'rangoli_marigold', 'diya_rangoli', 'hands_lighting']}
-EL = {k: add_media('el_' + k, f'{MEDIA}/elements/{k}.png', 500) for k in ['diya', 'rangoli_medallion', 'lantern']}
+EL = {k: add_media('el_' + k, f'{MEDIA}/elements/{k}.png', 900) for k in ['diya', 'rangoli_medallion', 'lantern', 'title_happy_diwali', 'fireworks_gold',
+      'fireworks_multi', 'diya_swirl', 'mandala_redgold', 'lanterns', 'swirl_wave', 'swirl_s', 'arc', 'rangoli_diyas']}
 _l = Image.open(f'{MEDIA}/elements/lantern.png'); _p = os.path.join(os.path.dirname(OUT) or '.', '.lantern_flip.png'); _l.transpose(Image.FLIP_LEFT_RIGHT).save(_p)
 EL['lantern_flip'] = add_media('el_lantern_flip', _p, 500); os.remove(_p)
-CLIPS = ['diya_macro', 'thali', 'diya_ring', 'women', 'sparkler_woman', 'sky_wide', 'fw_purple', 'sky_city', 'anaar']
+CLIPS = ['diya_macro', 'thali', 'diya_ring', 'women', 'sparkler_woman', 'sky_wide', 'fw_purple', 'sky_city', 'anaar',
+         'bokeh_loop', 'particle_ring', 'dust_a', 'dust_b']   # the last four: particle overlays (black background, screen blend)
 videos, bin_ = {}, []
 for k in CLIPS:
     p = f'{MEDIA}/clips/{k}.mp4'
     videos['dw_' + k] = {'name': k, 'ext': 'mp4', 'data': 'data:video/mp4;base64,' + base64.b64encode(open(p, 'rb').read()).decode()}
-    dur = float(__import__('subprocess').run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout)
-    bin_.append({'id': 'dw_' + k, 'name': k, 'kind': 'video', 'w': 720, 'h': 1280, 'dur': round(dur, 3), 'ext': 'mp4'})
+    pr = __import__('subprocess').run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height:format=duration', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout.split()
+    vw, vh = map(int, pr[0].split(',')[:2]); dur = float(pr[1])
+    bin_.append({'id': 'dw_' + k, 'name': k, 'kind': 'video', 'w': vw, 'h': vh, 'dur': round(dur, 3), 'ext': 'mp4'})
 # slot -> footage. ('clip', name, trim in s) or ('photo', name). A slot used twice continues its clip.
 MEDIA_FOR = {1: ('photo', 'diya_dark'), 2: ('clip', 'diya_macro', 0.0), 3: ('photo', 'rangoli_marigold'), 4: ('photo', 'diya_rangoli'),
              5: ('clip', 'thali', 0.5), 6: ('clip', 'diya_ring', 0.0), 7: ('photo', 'hands_lighting'), 8: ('clip', 'women', 0.2),
@@ -120,6 +123,14 @@ def holder(n, t0, t1, tk=None, in_=None, sound=None, opacity=1):
     it = photo(PHOTO['diya_dark'], t0, t1, tk=tk, in_=in_, name=f'Shot {n:02d} {m[1]}', opacity=opacity, sound=sound)
     it.pop('photo'); it['type'] = 'video'; it['id'] = 'vd' + it['id'][2:]; order[-1] = it['id']
     it['video'] = {'src': 'vid:dw_' + m[1], 'trimIn': round(m[2] + (t0 - _first[n]), 3), 'speed': 1, 'volume': 0}
+    return it
+
+
+def overlay(clip, t0, t1, w=SW, y=CY, opacity=0.85, trim=0.0, in_=None, out=None):
+    """a particle video layered over the footage with Screen blend (its black background disappears), centred"""
+    it = photo(PHOTO['diya_dark'], t0, t1, CX, y, w, in_=in_, out=out, name=f'Particles {clip}', opacity=opacity, blend=SCREEN)
+    it.pop('photo'); it['type'] = 'video'; it['id'] = 'vd' + it['id'][2:]; order[-1] = it['id']
+    it['video'] = {'src': 'vid:dw_' + clip, 'trimIn': trim, 'speed': 1, 'volume': 0}
     return it
 
 
@@ -201,6 +212,7 @@ rect(0, DUR, '#000000', name='Black base')
 IGN = beat(0) + 0.36                                   # 0.87: the kick where the flame catches
 holder(1, IGN, beat(3), in_=ph('fade', 1.3), tk=push(IGN, beat(3), 1.0, 1.06), opacity=0.9)
 particles_bed(0, beat(3), (0.6, 0.75, 0.5), 200)
+overlay('bokeh_loop', 0, beat(3), 1000, opacity=0.9, in_=ph('fade', 0.8))
 vfx('bloom', IGN, beat(3), 339, 954, 760, in_=ph('fade', 0.6), opacity=0.7)
 vfx('bloom', IGN, IGN + 0.5, 339, 954, 300, in_=ph('grow', 0.3), out=ph('fade', 0.25), blend=ADD, sound=('Smokey_06', 60))   # the ignition flare
 T0 = beat(1) + 0.2                                     # 1.53
@@ -237,27 +249,30 @@ for word, t0, t1, wdt in [('LIGHT', w0, w1, SW * 0.74), ('LOVE', w1, w2, SW * 0.
     blur_hit(t0 + 0.06, 12, 0.16); shake(t0, 14, 1.2, 0.35)
 zoom_hit(w2, 10)
 particles_bed(w0, w3, (0.3, 0.4, 0.35), 260)
+overlay('dust_b', w0, w3, SW, opacity=0.8)
 
 # ---- 9.54 - 12.83  DIWALI: golden sweep, particle-assembled title, firework trails, mandala, bursts
 d0, d1 = beat(11), beat(15)                              # 9.54 - 12.83
 holder(11, d0, d1, tk=push(d0, d1, 1.0, 1.06), opacity=0.55)
-vfx('mandala_gold', d0 + 0.3, d1, CX, CY, 980, opacity=0.35, in_=ph('fade', 0.6), tk=keys((d0 + 0.3, CX, CY, 0.92, 0, 'linear'), (d1, CX, CY, 1.0, 40, 'linear')))
+photo(EL['mandala_redgold'], d0 + 0.3, d1, CX, CY, 640, opacity=0.5, in_=ph('fade', 0.6), tk=keys((d0 + 0.3, CX, CY, 0.92, 0, 'linear'), (d1, CX, CY, 1.0, 40, 'linear')), name='Element mandala')
+overlay('particle_ring', d0, d1, 1000, opacity=0.95)
 vfx('dust_burst', d0 + 0.05, d0 + 1.2, CX, CY, 1100, tk=push(d0 + 0.05, d0 + 1.2, 1.25, 0.8, 'out'), out=ph('fade', 0.5), opacity=0.9)
 text('DIWALI', d0 + 0.12, d1, CY, SW * 0.84, 0.08, GOLD, split='letter', in_=ph('scatter', 1.0, 1, 0.025, 'center'), glow='#FFB34799',
      extrude={'on': True, 'depth': 0.1, 'angle': 90, 'steps': 6, 'color': '#5A2A08', 'shade': 0.6, 'swing': 0, 'swingFreq': 0.5, 'fade': 0},
      sound=('Smokey_09', 70), loop={'preset': 'push_in', 'amp': 0.04})
 text('FESTIVAL OF LIGHTS', d0 + 1.2, d1, CY + 190, SW * 0.56, 0.45, CREAM, in_=ph('fade_up', 0.6), glow=None)
 vfx('gold_rule', d0 + 1.1, d1, CX, CY + 140, 420, in_=ph('strip_open', 0.5), opacity=0.85)
-photo(EL['rangoli_medallion'], d0 + 1.0, d1, CX, 1075, 330, tk=keys((d0 + 1.0, CX, 1075, 1.0, 0, 'linear'), (d1, CX, 1075, 1.04, 30, 'linear')), in_=ph('grow', 0.5), name='Element rangoli')
+photo(EL['rangoli_diyas'], d0 + 1.0, d1, CX, 1075, 340, tk=keys((d0 + 1.0, CX, 1075, 1.0, 0, 'linear'), (d1, CX, 1075, 1.04, 30, 'linear')), in_=ph('grow', 0.5), name='Element rangoli')
 vfx('sweep', d0 - 0.05, d0 + 0.45, CX, CY, 1100, tk=keys((d0 - 0.05, -700, CY, 1, 0, 'out'), (d0 + 0.45, 1500, CY, 1, 0, 'linear')), blend=ADD,
     sound=('Woosh_MidH_3', 70))
 flash(d0, 0.08); shake(d0, 18, 1.5, 0.5); zoom_hit(d0, 12)
-vfx('trail_arc', d0 + 0.5, d0 + 1.9, CX, CY, 760, tk=keys((d0 + 0.5, CX, CY, 0.9, -40, 'linear'), (d0 + 1.9, CX, CY, 1.05, 140, 'linear')),
-    in_=ph('fade', 0.15), out=ph('fade', 0.4), blend=ADD, sound=('Woosh_High_2', 45))
-vfx('trail_arc_b', d0 + 1.6, d1, CX, CY + 40, 680, tk=keys((d0 + 1.6, CX, CY + 40, 1.0, 180, 'linear'), (d1, CX, CY + 40, 1.08, 330, 'linear')),
-    in_=ph('fade', 0.15), out=ph('fade', 0.4), blend=ADD)
-for t, k, x, y, w in [(beat(12), 'firework_gold', 170, 330, 560), (beat(13), 'firework_saffron', 560, 360, 520), (beat(14), 'firework_gold', 360, 1010, 600)]:
-    vfx(k, t, t + 1.0, x, y, w, depth=200, in_=ph('grow', 0.3), out=ph('fade', 0.6), tk=push(t, t + 1.0, 1.0, 1.12), blend=ADD, opacity=0.9)
+photo(EL['arc'], d0 + 0.5, d0 + 1.9, CX, CY - 10, 880, tk=keys((d0 + 0.5, CX, CY - 10, 0.9, -40, 'linear'), (d0 + 1.9, CX, CY - 10, 1.05, 140, 'linear')),
+      in_=ph('fade', 0.15), out=ph('fade', 0.4), blend=SCREEN, name='Element arc', sound=('Woosh_High_2', 45))
+photo(EL['arc'], d0 + 1.6, d1, CX, CY + 30, 840, tk=keys((d0 + 1.6, CX, CY + 30, 1.0, 180, 'linear'), (d1, CX, CY + 30, 1.08, 330, 'linear')),
+      in_=ph('fade', 0.15), out=ph('fade', 0.4), blend=SCREEN, name='Element arc')
+photo(EL['swirl_s'], d0 - 0.05, d0 + 0.65, CX, CY, 760, tk=push(d0 - 0.05, d0 + 0.65, 0.75, 1.3), in_=ph('fade', 0.1), out=ph('fade', 0.3), blend=SCREEN, name='Element swirl')
+for t, k, x, y, w in [(beat(12), 'fireworks_gold', 180, 330, 420), (beat(13), 'fireworks_multi', 540, 350, 400), (beat(14), 'fireworks_gold', CX, 230, 460)]:
+    photo(EL[k], t, t + 1.0, x, y, w, depth=200, in_=ph('grow', 0.3), out=ph('fade', 0.6), tk=push(t, t + 1.0, 1.0, 1.12), blend=SCREEN, name='Element ' + k)
 particles_bed(d0, d1, (0.45, 0.55, 0.4), 220)
 
 # ---- 12.83 - 16.11  fastest section: half-beat cuts, word flashes, mandala + streaks over the footage
@@ -273,6 +288,7 @@ vfx('mandala_gold', f[0], f[8], CX, CY, 1100, opacity=0.22, tk=keys((f[0], CX, C
 for t, y in [(f[2] - 0.05, 300), (f[6] - 0.05, 980)]:
     vfx('streak', t, t + 0.4, CX, y, 1400, tk=keys((t, -400, y, 1, 0, 'out'), (t + 0.4, 1100, y, 1, 0, 'linear')), sound=('Woosh_MidH_3', 40))
 particles_bed(f[0], f[8], (0.3, 0.45, 0.4), 420)
+overlay('dust_a', f[0], f[8], SW, opacity=0.85)
 for word, i in [('LIGHT', 1), ('JOY', 3), ('TOGETHERNESS', 5)]:
     text(word, f[i] + 0.05, f[i + 1], 1080, (SW * 0.3 if word != 'TOGETHERNESS' else SW * 0.62) if word != 'JOY' else SW * 0.17, 0.3, CREAM,
          in_=ph('fade', 0.06), glow='#FFB34755')
@@ -283,17 +299,17 @@ h0, fin = beat(19), beat(22)                              # 16.11, 18.58
 holder(20, h0, 19.95, tk=push(h0, 19.95, 1.0, 1.12, 'linear'))
 rect(h0, DUR, '#000000', 0.38, name='Hero scrim')   # keeps HAPPY DIWALI readable over the bright diya field
 flash(h0, 0.06, opacity=0.6)
-for k, x, sw in [('lantern', 70, 3), ('lantern_flip', 650, -3)]:
-    photo(EL[k], h0, DUR, x, 205, 112, tk=keys((h0, x, 205, 1, -sw, 'gentle'), (h0 + 1.9, x, 205, 1, sw, 'gentle'), (DUR, x, 205, 1, -sw, 'linear')), in_=ph('fade', 0.5), name='Element ' + k)
+photo(EL['lanterns'], h0, DUR, CX, 200, 330, tk=keys((h0, CX, 200, 1, -2, 'gentle'), (h0 + 1.9, CX, 200, 1, 2, 'gentle'), (DUR, CX, 200, 1, -2, 'linear')), in_=ph('fade', 0.5), name='Element lanterns')
+overlay('bokeh_loop', h0, DUR, 1000, y=CY, opacity=0.7, trim=0.5)
 particles_bed(h0, DUR, (0.5, 0.6, 0.45), 260)
-vfx('firework_gold', fin, fin + 1.4, CX, 560, 900, depth=150, in_=ph('grow', 0.35), out=ph('fade', 0.8), tk=push(fin, fin + 1.4, 1.0, 1.15), blend=ADD)
-vfx('firework_ember', fin + 0.12, fin + 1.4, 190, 420, 520, depth=250, in_=ph('grow', 0.3), out=ph('fade', 0.8), blend=ADD, opacity=0.85)
-vfx('firework_saffron', fin + 0.2, fin + 1.4, 560, 380, 480, depth=250, in_=ph('grow', 0.3), out=ph('fade', 0.8), blend=ADD, opacity=0.85)
+photo(EL['fireworks_multi'], fin, fin + 1.4, CX, 560, 720, depth=150, in_=ph('grow', 0.35), out=ph('fade', 0.8), tk=push(fin, fin + 1.4, 1.0, 1.15), blend=SCREEN, name='Element fireworks finale')
+photo(EL['fireworks_gold'], fin + 0.12, fin + 1.4, 190, 380, 420, depth=250, in_=ph('grow', 0.3), out=ph('fade', 0.8), blend=SCREEN, name='Element fireworks')
+photo(EL['fireworks_gold'], fin + 0.2, fin + 1.4, 540, 360, 380, depth=250, in_=ph('grow', 0.3), out=ph('fade', 0.8), blend=SCREEN, name='Element fireworks')
 vfx('bloom', fin, fin + 0.9, CX, 560, 1000, in_=ph('fade', 0.08), out=ph('fade', 0.7), opacity=0.6)
-text('HAPPY', h0 + 0.45, DUR, 525, SW * 0.36, 0.45, CREAM, split='letter', in_=ph('fade_up', 0.5, 1, 0.06), glow='#FFB34755', sound=('Smokey_06', 50))
-text('DIWALI', h0 + 0.85, DUR, 640, SW * 0.7, 0.1, GOLD, split='letter', in_=ph('fade_up', 0.7, 1, 0.07), glow='#FFB34799',
-     extrude={'on': True, 'depth': 0.08, 'angle': 90, 'steps': 5, 'color': '#5A2A08', 'shade': 0.6, 'swing': 0, 'swingFreq': 0.5, 'fade': 0})
-vfx('gold_rule', h0 + 1.5, DUR, CX, 740, 400, in_=ph('strip_open', 0.6), opacity=0.9)
+photo(EL['swirl_wave'], h0 + 0.35, h0 + 2.6, CX, 720, 720, tk=keys((h0 + 0.35, CX, 720, 0.9, -10, 'linear'), (h0 + 2.6, CX, 720, 1.1, 10, 'linear')), in_=ph('fade', 0.3), out=ph('fade', 0.6), blend=SCREEN, name='Element swirl')
+photo(EL['title_happy_diwali'], h0 + 0.5, DUR, CX, 720, 560, in_=ph('push_reveal', 0.9), tk=push(h0 + 0.5, DUR, 1.0, 1.04), name='Element HAPPY DIWALI title', sound=('Smokey_06', 50))
+
+
 vfx('streak', h0 + 1.4, h0 + 2.1, CX, 640, 1300, tk=keys((h0 + 1.4, -300, 640, 0.8, 0, 'out'), (h0 + 2.1, 1000, 640, 1.0, 0, 'linear')), sound=('Woosh_MidH_3', 45))
 shake(fin, 12, 1.0, 0.5); zoom_hit(fin, 7)
 
@@ -302,8 +318,8 @@ fx('colorBalance', 0, DUR, params={'redShift': 6, 'greenShift': 1, 'blueShift': 
 fx('grain', 0, DUR, params={'intensity': 8, 'size': 1.2})
 fx('vignetting', 0, DUR, params={'strength': 42, 'softness': 60})
 rect(19.0, DUR, '#000000', 1, in_=ph('fade', 0.8), name='Fade to black')
-vfx('bloom', 18.9, DUR, 352, 1008, 280, opacity=0.65, in_=ph('fade', 0.4))
-photo(EL['diya'], 18.9, DUR, CX, 1080, 220, in_=ph('fade', 0.4), name='Element diya (stays lit)')
+vfx('bloom', 18.9, DUR, 351, 966, 280, opacity=0.65, in_=ph('fade', 0.4))
+photo(EL['diya_swirl'], 18.9, DUR, CX, 1040, 300, in_=ph('fade', 0.4), name='Element diya (stays lit)')
 
 # ---------------------------------------------------------------- camera: pushes in the intro, the title and the hero; shakes on impacts
 CAM = [dict(t=0, z=0, ease='gentle'), dict(t=beat(3) - 0.01, z=150, ease='hold'), dict(t=beat(3), z=0, ease='hold'),
