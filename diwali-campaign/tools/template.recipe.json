@@ -1,0 +1,390 @@
+{
+ "title": "Car Beat Sync 3D Tower 9x16",
+ "aspect": "9:16",
+ "background": "#000000",
+ "bpm": 73.04,
+ "beat_offset": 0.506,
+ "texts": [
+  {
+   "text": "TURN",
+   "start": 0.3,
+   "end": 3.084,
+   "x": 255.0,
+   "y": 826.9,
+   "size": 6.02,
+   "color": "#FFFFFF",
+   "split": "whole",
+   "in": {
+    "preset": "punch_in",
+    "dur": 0.16,
+    "stagger": 0,
+    "order": "forward",
+    "amount": 1
+   },
+   "out": "none",
+   "tracking": 0.01,
+   "line_height": 0.92,
+   "align": "center",
+   "seed": 7,
+   "speed": 1,
+   "quality": "light",
+   "studio": {
+    "id": "tx7",
+    "depth": 3670.0,
+    "cam": true,
+    "rot": 0,
+    "tk": [],
+    "opacity": 1,
+    "blend": 0,
+    "slot": {
+     "on": true,
+     "label": "Bar 1 word 1"
+    },
+    "rx": 0,
+    "ry": 0,
+    "fx": {
+     "shadow": {
+      "on": true,
+      "color": "#00000080"
+     },
+     "glow": {
+      "on": false,
+      "color": "#FDFF57"
+     },
+     "outline": {
+      "on": false,
+      "color": "#000000"
+     },
+     "background": {
+      "on": false,
+      "color": "#0000007F"
+     }
+    },
+    "reflect": {
+     "on": false,
+     "mode": "pin",
+     "opacity": 0.22,
+     "gap": 0.04,
+     "fade": true,
+     "floor": "#F4F6F8",
+     "depth": 1.15
+    }
+   }
+  }
+ ],
+ "duration": 18.6,
+ "studio_project": {
+  "kmFormat": "km8",
+  "fxCurves": false,
+  "persp": {
+   "on": true,
+   "order": "z"
+  },
+  "mediaBin": [],
+  "manualOrder": true,
+  "music_user": {
+   "id": "music:cars",
+   "name": "Beatsync_edit_from_1m39s",
+   "ext": "m4a",
+   "durMs": 22764,
+   "volume": 100,
+   "trim": 0,
+   "play": true
+  }
+ },
+ "studio_scene": {
+  "camera": {
+   "on": true,
+   "near": 320,
+   "fog": {
+    "on": false,
+    "start": 4000,
+    "end": 5000
+   },
+   "keys": [],
+   "shake": []
+  },
+  "mirror": "scale",
+  "items": [
+   {
+    "id": "ph124",
+    "name": "Backdrop",
+    "start": 0,
+    "end": 18.6,
+    "x": 360,
+    "y": 640,
+    "w": 720,
+    "depth": 99999,
+    "rot": 0,
+    "rx": 0,
+    "ry": 0,
+    "yaw": 0,
+    "cam": false,
+    "in": null,
+    "out": null,
+    "loop": null,
+    "style": null,
+    "speed": 1,
+    "seed": 7,
+    "quality": "light",
+    "opacity": 1,
+    "blend": 0,
+    "tk": [],
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    },
+    "type": "photo",
+    "photo": {
+     "src": "up:bg_red",
+     "aspect": "9:16",
+     "border": 0,
+     "borderColor": "#FFFFFF",
+     "shadow": 0,
+     "reflect": 0,
+     "reflectMode": "native",
+     "panX": 0,
+     "panY": 0
+    }
+   },
+   {
+    "id": "fx125",
+    "type": "fx",
+    "effect": "poisonBlur",
+    "name": "Whip blur",
+    "start": 2.83,
+    "end": 3.05,
+    "params": {
+     "strength": 0
+    },
+    "keys": [
+     {
+      "t": 0,
+      "ease": "in",
+      "p": {
+       "strength": 0
+      }
+     },
+     {
+      "t": 0.14,
+      "ease": "out",
+      "p": {
+       "strength": 22
+      }
+     },
+     {
+      "t": 0.22,
+      "ease": "linear",
+      "p": {
+       "strength": 0
+      }
+     }
+    ],
+    "cam": false,
+    "in": null,
+    "out": null,
+    "loop": null,
+    "tk": [],
+    "opacity": 1,
+    "blend": 0,
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    }
+   },
+   {
+    "id": "fx126",
+    "type": "fx",
+    "effect": "chromaticZoom",
+    "name": "Zoom hit",
+    "start": 2.89,
+    "end": 3.19,
+    "params": {
+     "posX": 50,
+     "posY": 50,
+     "speed": 0,
+     "qualityLevel": 30,
+     "colmode": 0,
+     "strength": 0
+    },
+    "keys": [
+     {
+      "t": 0,
+      "ease": "in",
+      "p": {
+       "strength": 0
+      }
+     },
+     {
+      "t": 0.08,
+      "ease": "out",
+      "p": {
+       "strength": 8
+      }
+     },
+     {
+      "t": 0.3,
+      "ease": "linear",
+      "p": {
+       "strength": 0
+      }
+     }
+    ],
+    "cam": false,
+    "in": null,
+    "out": null,
+    "loop": null,
+    "tk": [],
+    "opacity": 1,
+    "blend": 0,
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    }
+   },
+   {
+    "id": "fx142",
+    "type": "fx",
+    "effect": "grain",
+    "name": "Film grain",
+    "start": 0,
+    "end": 18.6,
+    "params": {
+     "size": 1.5,
+     "intensity": 14,
+     "blendmode": 0,
+     "bmove": 1
+    },
+    "keys": [],
+    "cam": false,
+    "in": null,
+    "out": null,
+    "loop": null,
+    "tk": [],
+    "opacity": 1,
+    "blend": 0,
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    }
+   },
+   {
+    "id": "fx143",
+    "type": "fx",
+    "effect": "vignetting",
+    "name": "Vignette",
+    "start": 0,
+    "end": 18.6,
+    "params": {
+     "strength": 45,
+     "softness": 55,
+     "vigCol": "#000000"
+    },
+    "keys": [],
+    "cam": false,
+    "in": null,
+    "out": null,
+    "loop": null,
+    "tk": [],
+    "opacity": 1,
+    "blend": 0,
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    }
+   },
+   {
+    "id": "dc144",
+    "name": "Fade to black",
+    "start": 18.0,
+    "end": 18.6,
+    "x": 360,
+    "y": 640,
+    "w": 760,
+    "depth": 0,
+    "rot": 0,
+    "rx": 0,
+    "ry": 0,
+    "yaw": 0,
+    "cam": false,
+    "in": {
+     "preset": "fade",
+     "dur": 0.55,
+     "stagger": 0,
+     "order": "forward",
+     "amount": 1
+    },
+    "out": null,
+    "loop": null,
+    "style": null,
+    "speed": 1,
+    "seed": 7,
+    "quality": "light",
+    "opacity": 1,
+    "blend": 0,
+    "tk": [],
+    "slot": {
+     "on": false,
+     "label": ""
+    },
+    "sfx": {
+     "in": "",
+     "out": "",
+     "per": "block",
+     "pitch": "flat",
+     "volume": 80
+    },
+    "type": "decor",
+    "kind": "square",
+    "color": "#000000",
+    "alpha": 1,
+    "h": 1320
+   }
+  ],
+  "order": [
+   "ph124",
+   "fx125",
+   "fx126",
+   "fx142",
+   "fx143",
+   "dc144"
+  ],
+  "note": "Kinekit Studio recipe: car beat-sync, 3D kinetic tower (every layer corner-pinned). Clips and photos from Pexels (free to use)."
+ },
+ "studio_media": {}
+}
