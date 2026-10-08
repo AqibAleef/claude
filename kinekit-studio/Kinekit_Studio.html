@@ -1474,7 +1474,20 @@ function cleanKfs(kfs) {
   for (const k of kfs) { const t = Math.min(0.999, Math.max(0, finite(k.t, 0))); if (t <= last + 1e-5) continue; out.push(Object.assign({}, k, { t })); last = t; }
   if (!out.length) out.push(Object.assign({}, kfs[0] || { x: 0, y: 0, rot: 0, sx: 1, sy: 1 }, { t: 0 }));
   if (out[0].t > 0) out[0] = Object.assign({}, out[0], { t: 0 });
-  return out;
+  return continuousRot(out);
+}
+/* KineMaster interpolates Angle keys as plain numbers (no short-way wrap): write one continuous signed curve, the first
+   key in -180..180 and every next key the equivalent angle nearest to the previous one (359.6 after 0.7 becomes -0.4) */
+function continuousRot(kfs) {
+  let prev = null;
+  return kfs.map(k => {
+    let r = finite(k.rot, 0);
+    if (prev === null) r = ((r + 180) % 360 + 360) % 360 - 180;
+    else { while (r - prev > 180) r -= 360; while (r - prev < -180) r += 360; }
+    if (Math.abs(r) < 0.01) r = 0;
+    r = Math.round(r * 1000) / 1000; prev = r;
+    return r === k.rot ? k : Object.assign({}, k, { rot: r });
+  });
 }
 const itemPayload = it => { for (const n of it) if (n.k === 'm') return n.v; return []; };
 const kindName = it => ITEM_KINDS[String(nget(it, 'kind'))] || 'unknown';
@@ -1490,7 +1503,7 @@ function identityBase(L) { const bt = nget(L, 'base_transform'); if (!bt) return
 const MIRROR_METHODS = { scale: 'Negative scale', f122: 'Layer field 122', f123: 'Layer field 123' };
 const mirrorKfs = (kfs, m) => m === 'scale' ? kfs.map(k => Object.assign({}, k, { sy: -Math.abs(k.sy) })) : kfs;
 function mirrorField(L, m) { if (m === 'f122') setF(L, 122, 1); else if (m === 'f123') setF(L, 123, 1); }
-K.MIRROR_METHODS = MIRROR_METHODS;
+K.MIRROR_METHODS = MIRROR_METHODS; K.continuousRot = continuousRot;
 
 /* ---- KineMaster v8 layer extras (learned from pro templates)
    field 136: blend mode; 140: 0; 141: an 8-number track (all zero); 142: the layer's opacity, ONE constant value

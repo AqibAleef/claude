@@ -57,9 +57,13 @@ The analysis used librosa onset detection per frequency band (808/kick, snare, c
 
 ## KineMaster
 
-- **Export:** the `.kine` builds (5.8 MB).
-- **Keyframes:** the only keys the spike check flags are the band slide-ins. They're fast one-way ease-out arrivals that land on the hit, not glitches.
+- **Ready-made export:** `DRIVEN_146_9x16.kine`, exported with the fixed Studio (patch 05).
+- **Angle keys:**
+  - Only the 8 layers with a deliberate tilt punch carry Angle keys, e.g. −3° → 0° on the 3 of bar 5.
+  - Camera shakes are position-only, so they add no Angle keys.
+  - There are 0 jumps between 0° and 360°.
 - **Opacity:** constant on every layer.
+- **Band slide-ins:** the keyframe check flags them, but they're fast one-way ease-out arrivals that land on the hit, not glitches.
 
 ## Rebuilding
 

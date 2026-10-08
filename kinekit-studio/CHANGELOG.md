@@ -2,6 +2,23 @@
 
 The latest Studio is always `Kinekit_Studio.html` in this folder. The copies inside each project folder are the same file.
 
+## No more spinning Angle keys in the KineMaster export
+
+Layers no longer spin or twitch around their Angle in KineMaster.
+
+- **Before:** the exporter folded every angle into 0–360, so a tilt or wobble through 0° was written as, say, 0.7°, 359.6°, 0.5°.
+  - The Studio preview interpolates angles the short way, so it looked right in the Studio.
+  - KineMaster interpolates the stored numbers literally, so it spun the layer almost a full turn between those keys.
+  - DRIVEN 146 had 107 of these flips on 26 layers.
+- **Now:** right before keyframes are written, each layer's angles become one continuous signed curve.
+  - The first key sits in −180…180.
+  - Each next key uses the equivalent angle nearest the previous one, so 359.6 after 0.7 is written as −0.4.
+  - Float noise below 0.01° is written as exactly 0.
+  - The fix is in the one function every layer passes through (`cleanKfs`), so it covers text, images, shapes, 3D text and offsets.
+- **Measured:** DRIVEN 146 exported again has 0 flips, with the same 521 keys.
+- **Patch:** `patches/05_continuous_angle_keys.py`.
+- **Tip:** camera shake with a rotation amount puts small Angle keys on every layer it touches. For KineMaster-bound edits, a position-only shake (rotation 0) keeps the Angle track clean. The DRIVEN 146 recipe now does this.
+
 ## Smooth video playback (no flicker)
 
 Video layers no longer blink or stutter while the preview plays.

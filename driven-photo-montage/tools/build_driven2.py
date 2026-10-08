@@ -323,6 +323,8 @@ rect(20.5, DUR, '#050505', 1, in_=ph('fade', 0.9), name='Title fade')
 fx('grain', 0, DUR, params={'intensity': 5, 'size': 1.0})
 fx('vignetting', 0, DUR, params={'strength': 28, 'softness': 60})
 
+# shakes are position-only: a 0.5 degree wobble is invisible but would put Angle keys on every layer it touches
+for sh in SHAKE: sh['rot'] = 0
 CAM.sort(key=lambda k: k['t'])
 keys = [dict(t=0, x=CX, y=CY, z=0, pan=0, tilt=0, roll=0, lens=1, ease='hold')] + [k for k in CAM if k['t'] > 0] + [dict(t=DUR, x=CX, y=CY, z=0, pan=0, tilt=0, roll=0, lens=1, ease='hold')]
 r = copy.deepcopy(tpl)
