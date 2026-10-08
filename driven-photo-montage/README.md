@@ -48,27 +48,33 @@ The analysis used librosa onset detection per frequency band (808/kick, snare, c
 | 15.46 | In the break, the bands hang and drift apart. On the clap (15.87), the middle band is sucked in with a speed ramp. |
 | **16.08 final hit** | The Ferrari hero. **DRIVEN** lands on the tail's next 808 (16.69) and **BY INSTINCT** on 17.31. A slow pull-out runs while the music rings out; the picture fades by 20.4, the title by 21.4, then black to the end. |
 
-## Keeping the photos sharp
+## Depth with KineMaster's Magic Remover (no pre-cut images)
 
-- **No over-enlarging:** no photo is shown much bigger than its native size.
-  - **Portrait photos** (17, 18, 19) and their crops fill the frame at no more than 1.1× enlargement.
-  - **Landscape photos** (16, 20) are too small to fill a 9:16 frame sharply, so they're shown as wide **cards** that bleed off the sides over their own blurred backdrop.
-- **Depth:** the car always sits on its own cut-out layer, a little nearer the camera, so every camera move separates it from its background.
+Every car shot is the **original photo used twice**:
+
+- **Underneath:** the photo with KineMaster's **Blur** on that layer.
+- **On top:** the same photo with KineMaster's **Magic Remover**, set slightly nearer the camera, so every camera move lifts the car off its background.
+- **Landscape photos (16, 20):** shown as a lightly blurred card with the cut-out on top, over a heavily blurred, dimmed backdrop of the same photo.
+
+KineMaster makes the cut-out on the phone and redoes it when you **Replace** a photo. When you swap a photo, replace it on every layer of that shot: the cut-out, the blurred copy, and for cards the backdrop too. The layer names say which go together, e.g. "Photo 16 cut-out", "Photo 16 card" and "Photo 16 backdrop".
+
+The recipe also carries a preview mask per photo (made with BiRefNet, in `assets/masks/`), so the Studio shows the cut-outs immediately. In the `.kine` it becomes KineMaster's `.mask` file.
+
+**Sharpness:** portrait photos and crops fill the frame at no more than 1.1× enlargement. Landscape photos (16, 20) are shown as cards that bleed off the sides.
 
 ## KineMaster
 
-- **Ready-made export:** `DRIVEN_146_9x16.kine`, exported with the fixed Studio (patch 05).
-- **Angle keys:**
-  - Only the 8 layers with a deliberate tilt punch carry Angle keys, e.g. −3° → 0° on the 3 of bar 5.
-  - Camera shakes are position-only, so they add no Angle keys.
-  - There are 0 jumps between 0° and 360°.
-- **Opacity:** constant on every layer.
-- **Band slide-ins:** the keyframe check flags them, but they're fast one-way ease-out arrivals that land on the hit, not glitches.
+`DRIVEN_146_9x16.kine` is ready to import:
+
+- **Cut-outs and blur:** 12 Magic Remover layers, each with its mask, and 18 Blur effects, all KineMaster built-ins.
+- **Size:** each photo is stored once (3.4 MB in total).
+- **Angle keys:** only the deliberate tilt punches carry them, with 0 jumps between 0° and 360°.
+- **Opacity:** constant on every layer. The card backdrops use a fixed 55%.
 
 ## Rebuilding
 
 ```
 python3 tools/car_prep.py PHOTOS CUTOUTS CLIPS FONTS assets     # plates, cut-outs, type
 python3 tools/car_prep2.py PHOTOS assets CUTOUTS                # sharp crops, bands, cards
-python3 tools/build_driven2.py assets tools/template.recipe.json DRIVEN_146_Montage_9x16.recipe.json
+CUTS_DIR=assets/masks python3 tools/build_driven2.py assets tools/template.recipe.json DRIVEN_146_Montage_9x16.recipe.json   # assets needs photo/full_N.jpg, the crops, type/ and meta.json
 ```

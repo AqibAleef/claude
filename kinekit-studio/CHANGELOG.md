@@ -2,6 +2,42 @@
 
 The latest Studio is always `Kinekit_Studio.html` in this folder. The copies inside each project folder are the same file.
 
+## Magic Remover, per-layer Blur, and independent duplicates
+
+### Magic Remover (KineMaster background removal)
+
+Photo and video layers have a **Magic remover** section with a "Remove the background" switch.
+
+- **Export:** the `.kine` gets KineMaster's own switch, so KineMaster makes the cut-out on the phone and redoes it when the photo or clip is replaced. The field layout comes from a KineMaster 8 project:
+  - **Photos:** field 119 = 1, plus a `.mask` file next to the picture (field 121). The mask is a 352 × 352 PNG stretched over the whole image, with a hard cut in RGB and a soft matte in alpha.
+  - **Clips:** field 144 = 1. KineMaster cuts every frame, and there's no mask file.
+- **Preview:** the Studio shows the cut-out right away. The mask comes from one of three sources:
+  - **The recipe**, which can carry it.
+  - **An imported PNG** (alpha, or black and white).
+  - **Automatic detection:** MediaPipe DeepLab v3 finds the subjects and Magic Touch cuts each one out. It loads from the CDN the first time and takes about 1–2 s per photo. Clips are cut out in the preview as they play.
+- **Photos only:** Magic Remover uses the photo as it is, so turning it on switches off the photo's shape, border and shadow.
+- **Opening a `.kine`** restores Magic Remover, its mask and the blur.
+
+### Blur this layer
+
+A slider writes KineMaster's built-in Blur (`com.nexstreaming.csd.blurall`, block size 0–30) as an effect on that one layer: field 125 for photos, 150 for clips. The bytes are identical to what KineMaster writes. For instant depth, duplicate a layer, blur the lower copy and remove the background on the upper one.
+
+### Fixed: clips exported with Magic Remover on
+
+The built-in KineMaster 8 video template had field 144 = 1 (and 142/143 = 352), so every exported clip had Magic Remover switched on in KineMaster. Clips now export with it off unless you turn it on.
+
+### Fixed: duplicates tied to the original
+
+A duplicated layer used to keep the original's name, its template-slot label and its photo media id. That made the two indistinguishable in the Outliner and Template tab, and replacing the picture in the Media bin swapped both. A duplicate now gets:
+
+- its own name ("Car 2"),
+- its own slot label ("Rally 2"),
+- its own photo media id.
+
+### Patch
+
+`patches/06_magic_remover.py`
+
 ## No more spinning Angle keys in the KineMaster export
 
 Layers no longer spin or twitch around their Angle in KineMaster.

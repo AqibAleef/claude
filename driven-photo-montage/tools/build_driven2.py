@@ -8,8 +8,9 @@ bars. Intro hit 0.04 / 0.26, quiet to 1.28, build bar with a snare roll, DROP 2.
 15.46-16.07, FINAL HIT 16.075, then the track rings out (silent by ~20.5 s).
 Choreography: cuts and band landings on 0 / 3 / 5, camera steps forward on the hits, whips on the pickups, flash +
 shake + impact zoom only on downbeats that open a phrase, speed-ramped pushes into the drop and the final hit.
-Portrait photos are 2.5D (car cut-out over a defocused plate); landscape photos (16, 20) are sharp cards bleeding off
-the sides over their own blurred backdrop, with the car on a nearer layer; 1.8:1 bands form the triptychs.
+Depth is KineMaster-native: each car shot is the original photo twice, underneath with KineMaster Blur and on top with
+Magic Remover (cut out on the phone; preview masks travel in the recipe). Landscape photos (16, 20) become a lightly
+blurred card + the cut-out over a heavily blurred backdrop; 1.8:1 bands form the triptychs.
 """
 import base64, copy, io, json, os, subprocess, sys
 from PIL import Image
@@ -225,6 +226,48 @@ def ramp_fx(t0, t1, strength=10):
 
 def rule(t0, t1, y, w=120, color='red'):
     img(f'type/rule_{color}.png', t0, t1, CX, y, w, cam=False, in_=ph('strip_open', 0.22), name='Rule')
+
+
+# ================================================================ KineMaster-native depth: Magic Remover + Blur, no pre-cut images
+# Every car shot uses the ORIGINAL (graded) photo twice: underneath with KineMaster's Blur on that layer, on top with
+# KineMaster's Magic Remover (the cut-out happens on the phone, and again when the photo is replaced). The recipe
+# carries a preview mask per photo so the Studio shows the cut-out at once; KineMaster gets it as its .mask file.
+CUTS = os.environ.get('CUTS_DIR', os.path.join(os.path.dirname(A.rstrip('/')), 'cut'))
+def mask_id(n):
+    mid = f'mask_{n}'
+    if mid not in media:
+        m = META[f'photo_{n}']; a = Image.open(f'{CUTS}/{n}.png').convert('RGBA').resize((m['w'], m['h'])).getchannel('A')
+        im = Image.new('RGBA', a.size, (255, 255, 255, 0)); im.putalpha(a)
+        b = io.BytesIO(); im.save(b, 'PNG', optimize=True); media[mid] = 'data:image/png;base64,' + base64.b64encode(b.getvalue()).decode()
+    return mid
+
+
+def photo_layer(n, t0, t1, x, y, w, keys, depth=0, name='', slot=None, magic=False, blur=0, opacity=1):
+    it = img(f'photo/full_{n}.jpg', t0, t1, x, y, w, max_w=1600, depth=depth, tk=K(*keys, depth=depth), name=name, slot=slot, opacity=opacity)
+    if blur: it['clipBlur'] = blur
+    if magic: it['magic'] = {'on': True, 'mask': 'up:' + mask_id(n), 'how': 'recipe', 'for': it['photo']['src']}
+    return it
+
+
+def dual(n, t0, t1, keys, depth_bg=420, slot=None, sound=None, in_=None):
+    """2.5D photo from one picture: the photo far back with KineMaster Blur + the same photo in front with Magic Remover"""
+    m = META[f'photo_{n}']; asp = m['w'] / m['h']; w = cover_w(asp); kb = F / (F + depth_bg)
+    bgk = [(k[0], CX + (k[1] - CX) / kb, CY + (k[2] - CY) / kb, k[3], k[4]) + tuple(k[5:]) for k in keys]
+    photo_layer(n, t0, t1, bgk[0][1], bgk[0][2], w / kb, bgk, depth=depth_bg, name=f'Photo {n} blurred', blur=8)
+    photo_layer(n, t0, t1, keys[0][1], keys[0][2], w, keys, name=f'Photo {n} cut-out', magic=True, slot=slot or f'Photo {n} (cut-out; replace the blurred copy too)')
+
+
+def card(n, t0, t1, keys, cw=700, pop=-70, name=None):
+    """landscape photo as a card: the photo full-frame far back (heavy Blur, dimmed) + the card (light Blur) + the same
+    photo with Magic Remover a little nearer the camera, so every camera move lifts the car off its card"""
+    m = META[f'photo_{n}']; asp = m['w'] / m['h']
+    photo_layer(n, t0, t1, CX, CY, cover_w(asp, 650, 1.3), [(t0, CX, CY, 1, 0), (t1, CX, CY, 1, 0)], depth=650, name=f'Photo {n} backdrop', blur=24, opacity=0.55)
+    photo_layer(n, t0, t1, keys[0][1], keys[0][2], cw, keys, name=f'Photo {n} card', blur=4)
+    kc = F / (F + pop)
+    ck = [(k[0], CX + (k[1] - CX) / kc, CY + (k[2] - CY) / kc, k[3], k[4]) + tuple(k[5:]) for k in keys]
+    photo_layer(n, t0, t1, ck[0][1], ck[0][2], cw / kc, ck, depth=pop, name=f'Photo {n} cut-out', magic=True,
+                slot=name or f'Photo {n} (cut-out; replace the card + backdrop too)')
+    return m['h'] / m['w'] * cw
 
 
 # ================================================================ the edit (music: the clip's 1:39 - end, 146 BPM, 3-3-2 groove)
