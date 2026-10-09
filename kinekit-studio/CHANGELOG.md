@@ -2,6 +2,55 @@
 
 The latest Studio is always `Kinekit_Studio.html` in this folder. The copies inside each project folder are the same file.
 
+## Motion tracking (Track mode)
+
+A new **Track** mode (top bar: Edit · Animate · **Track** · Export) for tracking video clips and making layers follow them.
+
+![Track mode](track_mode.png)
+
+### Tracker types
+
+- **1-point:** follows one spot. Use it for text or stickers that move with something.
+- **2-point:** follows two spots, so it picks up rotation and scale as well as position.
+- **Planar (screen):** drag four corners onto a flat surface, such as a phone screen, sign or poster. It tracks the surface's perspective so you can replace what is on it.
+- **Find faces & people:** detects faces, people and objects automatically. Click one to track it.
+
+Track back, Track ▶ and Whole clip run the tracker. A confidence bar shows how sure it was on each frame, and frames where it lost the subject are marked. Feature size, Search area and Smoothing let you tune it.
+
+### Using a track
+
+- **Attach a layer:** choose a layer and a mode:
+  - Position
+  - Position + scale
+  - Position + rotation + scale
+  - Corner pin (planar)
+
+  The motion becomes ordinary keyframes, so it exports to KineMaster.
+- **New text that follows:** adds a text layer already attached to the tracker. On a face, it is placed just above the head.
+- **Stabilize:** the opposite of attaching. It moves the clip so the tracked point stays still, with a zoom to hide the edges.
+
+### Demo
+
+There is a new demo on the start screen, **Tracking Playground**. It is a generated clip with a point tracker and a planar tracker already run. The FOLLOW ME text rides the target, and a photo is pinned into the poster.
+
+### Fixes
+
+- **Recorded WebM clips:** clips recorded in a browser report an infinite length, which broke export. The real length is now measured.
+- **Corner-pinned photos:** the four-corner pin on a photo layer was never exported. It is exported now for tracker-pinned layers.
+
+### Tested
+
+- **1-point tracker:** median error 1.5 px, with no frames lost.
+- **Planar tracker:** median corner error 6.9 px.
+- **Stabilize:** a target that moved about 250 px stays within ±1 px.
+- **Face and person detection** on real footage: confidence 0.8 to 0.93. The face track holds until the scene cut.
+- **Export:** the pinned photo exports 118 corner-pin keys. The DRIVEN 146 export is unchanged.
+
+### Notes
+
+- **Detection models:** face, person and object detection download from the internet the first time you use them.
+- **Phones:** this has not been tried on a phone yet.
+
 ## An organised workspace (stage 1 of the redesign)
 
 The Studio is reorganised around what you are doing, and it opens on a start screen with a demo project for each feature.
