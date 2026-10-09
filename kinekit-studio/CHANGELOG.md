@@ -2,6 +2,81 @@
 
 The latest Studio is always `Kinekit_Studio.html` in this folder. The copies inside each project folder are the same file.
 
+## An organised workspace (stage 1 of the redesign)
+
+The Studio is reorganised around what you are doing, and it opens on a start screen with a demo project for each feature.
+
+![Start screen](start_screen.png)
+
+### Start screen
+
+Click **KINEKIT STUDIO** (top left) to get back to it at any time.
+
+- **Continue:** reopens your last session.
+- **New project:** pick a shape: 9:16, 16:9 or 1:1.
+- **Open a file:** a `.kine` from KineMaster or a recipe.
+- **Show at start:** untick it to start straight in the editor.
+
+### Feature demo projects
+
+One small project per feature, with filters (All, New features, Text, Shapes, Camera, Photos, Effects):
+
+| Demo | Feature |
+|---|---|
+| Hello, I'm Your Name | Kinetic typography |
+| Chrome Logo Reveal | 3D text, chrome and gold |
+| Clean Intro | Shapes and HUD |
+| Into the New Story | Camera fly-through |
+| Big Story | Crane and dolly zoom |
+| Your Title · Orbit | 3D layout |
+| One, Two, Three | Whip pans |
+| Photo Album | Photo cards and templates |
+| Retro Look | Effects: duotone, light rays, grain, vignette |
+| Depth with Magic Remover | A drawn stand-in person, already cut out, with SUMMER behind them |
+| Beat Sync Reel | A 128 BPM drum track generated inside the app, found by beat detection; cuts on bars |
+
+The app ships with no third-party media; the thumbnails were rendered by the Studio itself.
+
+### Top bar
+
+- **Project button:** shows the title, shape and length, and opens **Project settings** in a dialog. Everything that used to fill the right panel (title, canvas, background, length, speed, music, KineMaster version, perspective, keyframe optimizer) now lives there.
+- **Modes:**
+  - **Edit:** build the scene.
+  - **Animate:** turns on the curve editor and the Animate or Camera tab.
+  - **Export:** see below.
+- **Search (Ctrl+K):** type to find and run any command, effect or demo project. Use the arrow keys and Enter.
+
+### Properties panel
+
+- **Tabs:** labelled and in a fixed order: Transform · Text / Photo / Clip / Shape / Effect · Animate · 3D · Template · Camera. The layer's name sits above them.
+- **Explanations:** the long help paragraphs are folded away behind the ⓘ button. Status lines and warnings stay visible.
+
+### Left panel
+
+The tabs are now Layers, Library and Media. Template slots appear in Export mode.
+
+### Export mode
+
+A live check of the project, sorted by importance, with one-click fixes:
+
+- **Problems:** photos or clips missing from this browser.
+- **Soft photos:** photos enlarged more than 1.25×.
+- **Music:** music that is not in this browser.
+- **Template slots:** issues with a slot.
+- **Information:** Magic Remover status, real 3D text, hidden layers, slot count and size.
+
+The right panel holds Export .kine, Save recipe, Template guide and the KineMaster settings.
+
+### Fixed along the way
+
+- Sizing a photo or clip whose picture was still loading no longer throws an error.
+- With nothing selected, the panel says so instead of jumping to the project settings.
+
+### Patch and tests
+
+- **Patch:** `patches/07_workspace.py`. The demo thumbnails are in `patches/07_demo_thumbs/`.
+- **Tests:** a `.kine` export of DRIVEN 146 is identical in content (80 layers, 492 keys, 12 Magic Remover masks, 0 angle jumps). The offset/origin, Magic Remover and duplicate tests pass unchanged.
+
 ## Magic Remover, per-layer Blur, and independent duplicates
 
 ### Magic Remover (KineMaster background removal)
